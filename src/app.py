@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from src.api import main_router
 from src.database.db_session import AsyncPostgresClient
+from src.database.redis_session import RedisClient
 from src.settings import settings
 
 
@@ -23,9 +24,11 @@ class App(FastAPI):
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
         await AsyncPostgresClient.init_postgres(settings.postgres_url)
+        await RedisClient.init_redis(settings.redis_url)
         logging.info("All resources have been successfully initialized")
 
         yield
 
+        await RedisClient.close_redis()
         await AsyncPostgresClient.close_postgres()
         logging.info("All resources have been successfully closed")

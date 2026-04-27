@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     postgres_host: str
     postgres_port: int
     postgres_database: str
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int
+    jwt_refresh_token_expire_days: int
+    redis_host: str
+    redis_port: int
+    redis_db: int
+    redis_password: str
 
     @property
     def postgres_url(self) -> str:
@@ -24,6 +32,11 @@ class Settings(BaseSettings):
             f"@{self.postgres_host}:{self.postgres_port}"
             f"/{self.postgres_database}"
         )
+
+    @property
+    def redis_url(self) -> str:
+        credentials = f":{self.redis_password}@" if self.redis_password else ""
+        return f"redis://{credentials}{self.redis_host}:{self.redis_port}/{self.redis_db}"
 
 
 settings = Settings()
