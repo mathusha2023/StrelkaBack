@@ -24,6 +24,7 @@ class QuestModel(Base):
     duration_minutes: Mapped[int] = mapped_column(Integer)
     rules_and_warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[QuestStatus] = mapped_column(default=QuestStatus.ON_MODERATION)
     creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
 
@@ -31,4 +32,9 @@ class QuestModel(Base):
         "UserModel",
         back_populates="created_quests",
         foreign_keys=[creator_id],
+    )
+    complaints: Mapped[list["QuestComplaintModel"]] = relationship(
+        "QuestComplaintModel",
+        back_populates="quest",
+        cascade="all, delete-orphan",
     )

@@ -10,6 +10,7 @@ from src.schemes.auth import (
     UserCreate,
     UserResponse,
 )
+from src.models.users import UserRole
 from src.services.auth import AuthService, get_current_user, get_redis
 
 router = APIRouter(tags=["Authorization"], prefix="/auth")
@@ -27,6 +28,20 @@ async def register_user(
     redis: Redis = Depends(get_redis),
 ) -> TokenPairResponse:
     return await AuthService(session, redis).register(payload)
+
+
+@router.post(
+    "/register/moderator",
+    response_model=TokenPairResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Register new moderator",
+)
+async def register_moderator(
+    payload: UserCreate,
+    session: AsyncSession = Depends(create_session),
+    redis: Redis = Depends(get_redis),
+) -> TokenPairResponse:
+    return await AuthService(session, redis).register_with_role(payload, UserRole.MODERATOR)
 
 
 @router.post("/login", response_model=TokenPairResponse, summary="Login user")

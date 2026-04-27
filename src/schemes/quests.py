@@ -5,7 +5,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class QuestStatusSchema(str, Enum):
-    DRAFT = "draft"
     ON_MODERATION = "on_moderation"
     PUBLISHED = "published"
     ARCHIVED = "archived"
@@ -103,8 +102,49 @@ class QuestResponse(BaseModel):
     duration_minutes: int
     rules_and_warnings: str | None
     image_file_id: str | None
+    rejection_reason: str | None
     status: QuestStatusSchema
     creator: QuestCreatorResponse
+
+
+class QuestRejectRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=2000)
+
+
+class QuestArchiveStatusSchema(str, Enum):
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+
+
+class QuestArchiveStatusUpdateRequest(BaseModel):
+    status: QuestArchiveStatusSchema
+
+
+class QuestComplaintCreateRequest(BaseModel):
+    reason: str = Field(min_length=5, max_length=2000)
+
+
+class QuestComplaintAuthorResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    username: str
+
+
+class QuestComplaintResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    reason: str
+    quest_id: int
+    author: QuestComplaintAuthorResponse
+
+
+class QuestComplaintPageResponse(BaseModel):
+    items: list[QuestComplaintResponse]
+    total: int
+    limit: int
+    offset: int
 
 
 class QuestPageResponse(BaseModel):

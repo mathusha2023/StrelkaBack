@@ -35,6 +35,9 @@ class AuthService:
         self.redis = redis
 
     async def register(self, payload: UserCreate) -> TokenPairResponse:
+        return await self.register_with_role(payload, UserRole.USER)
+
+    async def register_with_role(self, payload: UserCreate, role: UserRole) -> TokenPairResponse:
         existing_user = await self._get_user_by_email(payload.email)
         if existing_user is not None:
             raise HTTPException(
@@ -47,7 +50,7 @@ class AuthService:
             email=payload.email,
             hashed_password=hash_password(payload.password),
             birthdate=payload.birthdate,
-            role=UserRole.USER,
+            role=role,
         )
         self.session.add(user)
         await self.session.commit()
@@ -183,3 +186,20 @@ async def get_current_user(
         )
 
     return UserResponse.model_validate(user)
+
+
+def require_roles(*allowed_roles: UserRole):
+    allowed_role_values = {role.value for role in allowed_roles}
+
+    def _ensure_allowed_role(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:
+        if current_user.role.value not in allowed_role_values:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Insufficient permissions",
+            )
+        return current_user
+
+    return _ensure_allowed_role
+
+
+require_moderator = require_roles(UserRole.MODERATOR)
