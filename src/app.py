@@ -1,9 +1,9 @@
 import logging
-
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from src.api import main_router
+from src.database.db_session import AsyncPostgresClient
 from src.settings import settings
 
 
@@ -22,8 +22,10 @@ class App(FastAPI):
     @staticmethod
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        await AsyncPostgresClient.init_postgres(settings.postgres_url)
         logging.info("All resources have been successfully initialized")
 
         yield
 
+        await AsyncPostgresClient.close_postgres()
         logging.info("All resources have been successfully closed")

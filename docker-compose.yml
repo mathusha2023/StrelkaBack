@@ -1,0 +1,58 @@
+name: "Backend"
+
+services:
+  database:
+    hostname: ${POSTGRES_HOST}
+    container_name: database
+    image: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    expose:
+      - ${POSTGRES_PORT}
+    command:
+      - -p ${POSTGRES_PORT}
+#    volumes:
+#      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - backend
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    container_name: adminer
+    image: adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    depends_on:
+      - database
+    networks:
+      - backend
+
+#  api:
+#    container_name: api
+#    build: .
+#    restart: unless-stopped
+#    ports:
+#      - "${PORT}:${PORT}"
+#    expose:
+#      - ${PORT}
+#    depends_on:
+#      - database
+#    networks:
+#      - backend
+
+networks:
+  backend:
+    driver: bridge
+
+#volumes:
+#  postgres_data:
