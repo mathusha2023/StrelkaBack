@@ -57,21 +57,21 @@ services:
     networks:
       - backend
 
-#  api:
-#    container_name: api
-#    build: .
-#    restart: unless-stopped
-#    env_file:
-#      - .env
-#    ports:
-#      - "${PORT}:${PORT}"
-#    depends_on:
-#      database:
-#        condition: service_healthy
-#      redis:
-#        condition: service_healthy
-#    networks:
-#      - backend
+  api:
+    container_name: api
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "${PORT}:${PORT}"
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - backend
 
 networks:
   backend:
