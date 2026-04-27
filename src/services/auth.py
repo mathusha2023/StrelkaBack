@@ -4,6 +4,7 @@ from jwt import InvalidTokenError
 from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from src.core.security import (
     create_access_token,
@@ -87,7 +88,9 @@ class AuthService:
                 detail="Refresh token is no longer valid",
             )
 
-        result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))
+        result = await self.session.execute(
+            select(UserModel).options(selectinload(UserModel.team)).where(UserModel.id == user_id)
+        )
         user = result.scalar_one_or_none()
         if user is None:
             raise HTTPException(
@@ -116,7 +119,7 @@ class AuthService:
         await self.redis.delete(self._refresh_key(user_id))
 
     async def _get_user_by_email(self, email: str) -> UserModel | None:
-        query = select(UserModel).where(UserModel.email == email)
+        query = select(UserModel).options(selectinload(UserModel.team)).where(UserModel.email == email)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
 
@@ -169,7 +172,9 @@ async def get_current_user(
             detail="Invalid token type",
         )
 
-    result = await session.execute(select(UserModel).where(UserModel.id == user_id))
+    result = await session.execute(
+        select(UserModel).options(selectinload(UserModel.team)).where(UserModel.id == user_id)
+    )
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(

@@ -33,6 +33,7 @@ class UserResponse(BaseModel):
     username: str
     birthdate: date
     role: UserRoleSchema
+    team_name: str | None = None
 
 
 class TokenPairResponse(BaseModel):
