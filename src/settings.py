@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE=".env.develop"
+ENV_FILE=".env"
 
 
 class Settings(BaseSettings):
