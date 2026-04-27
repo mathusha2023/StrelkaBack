@@ -34,6 +34,7 @@ services:
     image: postgres
     restart: unless-stopped
     environment:
+      POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}

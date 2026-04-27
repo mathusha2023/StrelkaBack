@@ -23,13 +23,13 @@ class Settings(BaseSettings):
     redis_port: int
     redis_db: int
     redis_password: str
-    S3_HOST: str
-    S3_PORT: int
-    S3_ADMIN_PORT: str
-    S3_ACCESS_KEY: str
-    S3_SECRET_KEY: str
-    S3_BUCKET: str
-    S3_SECURE: bool = False
+    s3_host: str
+    s3_port: int
+    s3_admin_port: str
+    s3_access_key: str
+    s3_secret_key: str
+    s3_bucket: str
+    s3_secure: bool = False
 
     @property
     def postgres_url(self) -> str:
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
 
     @property
     def s3_endpoint(self) -> str:
-        return f"{self.S3_HOST}:{self.S3_PORT}"
+        return f"{self.s3_host}:{self.s3_port}"
 
 
 settings = Settings()

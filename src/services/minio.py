@@ -20,13 +20,13 @@ class MinioService:
 
         cls._client = Minio(
             endpoint=settings.s3_endpoint,
-            access_key=settings.S3_ACCESS_KEY,
-            secret_key=settings.S3_SECRET_KEY,
-            secure=settings.S3_SECURE,
+            access_key=settings.s3_access_key,
+            secret_key=settings.s3_secret_key,
+            secure=settings.s3_secure,
         )
-        bucket_exists = await to_thread(cls._client.bucket_exists, settings.S3_BUCKET)
+        bucket_exists = await to_thread(cls._client.bucket_exists, settings.s3_bucket)
         if not bucket_exists:
-            await to_thread(cls._client.make_bucket, settings.S3_BUCKET)
+            await to_thread(cls._client.make_bucket, settings.s3_bucket)
 
     @classmethod
     async def close_minio(cls) -> None:
@@ -49,7 +49,7 @@ class MinioService:
         stream, length = await cls._prepare_stream(data)
         await to_thread(
             client.put_object,
-            settings.S3_BUCKET,
+            settings.s3_bucket,
             object_name,
             stream,
             length,
@@ -72,7 +72,7 @@ class MinioService:
     async def delete_file(cls, object_name: str) -> None:
         client = cls._get_client()
         try:
-            await to_thread(client.remove_object, settings.S3_BUCKET, object_name)
+            await to_thread(client.remove_object, settings.s3_bucket, object_name)
         except S3Error as exc:
             if exc.code != "NoSuchKey":
                 raise
@@ -80,7 +80,7 @@ class MinioService:
     @classmethod
     async def get_file_stream(cls, object_name: str) -> tuple[BytesIO, str]:
         client = cls._get_client()
-        response = await to_thread(client.get_object, settings.S3_BUCKET, object_name)
+        response = await to_thread(client.get_object, settings.s3_bucket, object_name)
         try:
             payload = await to_thread(response.read)
             content_type = response.headers.get("Content-Type", "application/octet-stream")
