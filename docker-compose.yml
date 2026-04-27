@@ -1,6 +1,33 @@
 name: "Backend"
 
 services:
+  minio:
+    container_name: minio
+    image: minio/minio
+    restart: unless-stopped
+    entrypoint: sh
+    command: >
+      -c 'mkdir -p /data/bucket
+      && minio server /data'
+    ports:
+      - "${S3_PORT}:${S3_PORT}"
+      - "${S3_ADMIN_PORT}:${S3_ADMIN_PORT}"
+    expose:
+      - ${S3_PORT}
+      - ${S3_ADMIN_PORT}
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+      MINIO_ADDRESS: ":${S3_PORT}"
+      MINIO_CONSOLE_ADDRESS: ":${S3_ADMIN_PORT}"
+    healthcheck:
+      test: [ "CMD", "sh", "-c", "mc alias set myminio http://localhost:${S3_PORT} ${S3_ACCESS_KEY} ${S3_SECRET_KEY} && mc ls myminio" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend
+
   database:
     hostname: ${POSTGRES_HOST}
     container_name: database
@@ -8,15 +35,14 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DATABASE}
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
     command:
       - -p
-      - "5432"
-#    volumes:
-#      - postgres_data:/var/lib/postgresql/data
+      - "${POSTGRES_PORT}"
     networks:
       - backend
     healthcheck:
@@ -34,9 +60,7 @@ services:
       --save 60 1
       --requirepass ${REDIS_PASSWORD}"
     ports:
-      - "${REDIS_PORT}:6379"
-#    volumes:
-#      - redis_data:/data
+      - "${REDIS_PORT}:${REDIS_PORT}"
     networks:
       - backend
     healthcheck:
@@ -57,26 +81,25 @@ services:
     networks:
       - backend
 
-  api:
-    container_name: api
-    build: .
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "${PORT}:${PORT}"
-    depends_on:
-      database:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - backend
+#  api:
+#    container_name: api
+#    build: .
+#    restart: unless-stopped
+#    env_file:
+#      - .env
+#    ports:
+#      - "${PORT}:${PORT}"
+#    depends_on:
+#      database:
+#        condition: service_healthy
+#      redis:
+#        condition: service_healthy
+#      minio:
+#        condition: service_healthy
+#    networks:
+#      - backend
 
 networks:
   backend:
     driver: bridge
-#
-#volumes:
-#  postgres_data:
-#  redis_data:
+

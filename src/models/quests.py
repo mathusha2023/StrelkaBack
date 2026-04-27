@@ -1,0 +1,35 @@
+from enum import Enum
+
+from sqlalchemy import ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.database.base import Base
+from src.database.data_types import intpk
+
+class QuestStatus(str, Enum):
+    DRAFT = "draft"
+    ON_MODERATION = "on_moderation"
+    PUBLISHED = "published"
+    ARCHIVED = "archived"
+    REJECTED = "rejected"
+
+
+class QuestModel(Base):
+    __tablename__ = "quests"
+
+    id: Mapped[intpk]
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[str] = mapped_column(Text)
+    location: Mapped[str] = mapped_column(String(255))
+    difficulty: Mapped[int] = mapped_column(Integer)
+    duration_minutes: Mapped[int] = mapped_column(Integer)
+    rules_and_warnings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[QuestStatus] = mapped_column(default=QuestStatus.DRAFT)
+    creator_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+
+    creator: Mapped["UserModel"] = relationship(
+        "UserModel",
+        back_populates="created_quests",
+        foreign_keys=[creator_id],
+    )

@@ -34,6 +34,11 @@ class UserModel(Base):
         back_populates="creator",
         foreign_keys="TeamModel.creator_id",
     )
+    created_quests: Mapped[list["QuestModel"]] = relationship(
+        "QuestModel",
+        back_populates="creator",
+        foreign_keys="QuestModel.creator_id",
+    )
 
     @property
     def age(self) -> int:

@@ -1,6 +1,6 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-ENV_FILE=".env"
+ENV_FILE=".env.develop"
 
 
 class Settings(BaseSettings):
@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     redis_port: int
     redis_db: int
     redis_password: str
+    S3_HOST: str
+    S3_PORT: int
+    S3_ADMIN_PORT: str
+    S3_ACCESS_KEY: str
+    S3_SECRET_KEY: str
+    S3_BUCKET: str
+    S3_SECURE: bool = False
 
     @property
     def postgres_url(self) -> str:
@@ -37,6 +44,10 @@ class Settings(BaseSettings):
     def redis_url(self) -> str:
         credentials = f":{self.redis_password}@" if self.redis_password else ""
         return f"redis://{credentials}{self.redis_host}:{self.redis_port}/{self.redis_db}"
+
+    @property
+    def s3_endpoint(self) -> str:
+        return f"{self.S3_HOST}:{self.S3_PORT}"
 
 
 settings = Settings()
