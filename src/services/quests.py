@@ -9,7 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from src.models.quests import QuestModel, QuestStatus
 from src.models.quest_complaints import QuestComplaintModel
-from src.models.users import UserModel
+from src.models.quest_points import QuestPointModel
+from src.models.users import UserModel, UserRole
 from src.schemes.auth import UserResponse
 from src.schemes.quests import (
     QuestArchiveStatusSchema,
@@ -17,6 +18,7 @@ from src.schemes.quests import (
     QuestComplaintPageResponse,
     QuestComplaintResponse,
     QuestCreate,
+    QuestDetailResponse,
     QuestListFilters,
     QuestPageResponse,
     QuestResponse,
@@ -54,20 +56,40 @@ class QuestService:
             status=QuestStatus.ON_MODERATION,
             creator_id=current_user.id,
         )
+        quest.points = [
+            QuestPointModel(
+                title=point.title,
+                latitude=point.latitude,
+                longitude=point.longitude,
+                task=point.task,
+                correct_answer=point.correct_answer,
+                hint=point.hint,
+                point_rules=point.point_rules,
+            )
+            for point in payload.points
+        ]
         self.session.add(quest)
         await self.session.commit()
         await self.session.refresh(quest)
 
         return await self._get_quest_response(quest.id)
 
-    async def get_quest(self, quest_id: int) -> QuestResponse:
-        quest = await self._get_quest(quest_id)
-        if quest.status != QuestStatus.PUBLISHED:
+    async def get_quest(
+        self,
+        quest_id: int,
+        current_user: UserResponse | None = None,
+    ) -> QuestDetailResponse:
+        quest = await self._get_quest_with_points(quest_id)
+        is_moderator = (
+            current_user is not None
+            and current_user.role.value == UserRole.MODERATOR.value
+        )
+        if quest.status != QuestStatus.PUBLISHED and not is_moderator:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Quest not found",
             )
-        return QuestResponse.model_validate(quest)
+        return QuestDetailResponse.model_validate(quest)
 
     async def get_my_quests(
         self,
@@ -82,14 +104,24 @@ class QuestService:
             filters,
         )
 
-    async def get_all_quests(self, filters: QuestListFilters) -> QuestPageResponse:
-        return await self._get_paginated_quests(
+    async def get_all_quests(
+        self,
+        filters: QuestListFilters,
+        current_user: UserResponse | None = None,
+    ) -> QuestPageResponse:
+        statement = (
             select(QuestModel)
             .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
-            .where(QuestModel.status == QuestStatus.PUBLISHED)
-            .order_by(QuestModel.id.desc()),
-            filters,
+            .order_by(QuestModel.id.desc())
         )
+        is_moderator = (
+            current_user is not None
+            and current_user.role.value == UserRole.MODERATOR.value
+        )
+        if not is_moderator:
+            statement = statement.where(QuestModel.status == QuestStatus.PUBLISHED)
+
+        return await self._get_paginated_quests(statement, filters)
 
     async def get_quests_on_moderation(self, filters: QuestListFilters) -> QuestPageResponse:
         return await self._get_paginated_quests(
@@ -225,6 +257,23 @@ class QuestService:
         result = await self.session.execute(
             select(QuestModel)
             .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .where(QuestModel.id == quest_id)
+        )
+        quest = result.scalar_one_or_none()
+        if quest is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quest not found",
+            )
+        return quest
+
+    async def _get_quest_with_points(self, quest_id: int) -> QuestModel:
+        result = await self.session.execute(
+            select(QuestModel)
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .where(QuestModel.id == quest_id)
         )
         quest = result.scalar_one_or_none()

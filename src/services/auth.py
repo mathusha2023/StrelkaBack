@@ -188,6 +188,16 @@ async def get_current_user(
     return UserResponse.model_validate(user)
 
 
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(http_bearer),
+    session: AsyncSession = Depends(create_session),
+) -> UserResponse | None:
+    if credentials is None:
+        return None
+
+    return await get_current_user(credentials=credentials, session=session)
+
+
 def require_roles(*allowed_roles: UserRole):
     allowed_role_values = {role.value for role in allowed_roles}
 

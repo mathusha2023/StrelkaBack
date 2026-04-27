@@ -38,3 +38,8 @@ class QuestModel(Base):
         back_populates="quest",
         cascade="all, delete-orphan",
     )
+    points: Mapped[list["QuestPointModel"]] = relationship(
+        "QuestPointModel",
+        back_populates="quest",
+        cascade="all, delete-orphan",
+    )

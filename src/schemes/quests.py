@@ -1,7 +1,15 @@
+import json
 from enum import Enum
 
 from fastapi import Form, HTTPException, Query
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+
+QUEST_POINTS_FORM_EXAMPLE = (
+    '[{"title":"Старый мост","latitude":55.751244,"longitude":37.618423,'
+    '"task":"Найдите табличку на опоре моста и укажите номер, указанный на ней.",'
+    '"correct_answer":"42","hint":"Табличка со стороны реки",'
+    '"point_rules":"Не выходить на проезжую часть"}]'
+)
 
 
 class QuestStatusSchema(str, Enum):
@@ -18,6 +26,22 @@ class QuestCreate(BaseModel):
     difficulty: int = Field(ge=1, le=5)
     duration_minutes: int = Field(gt=0)
     rules_and_warnings: str | None = Field(default=None, max_length=5000)
+    points: list["QuestPointCreate"] = Field(
+        min_length=1,
+        json_schema_extra={
+            "example": [
+                {
+                    "title": "Старый мост",
+                    "latitude": 55.751244,
+                    "longitude": 37.618423,
+                    "task": "Найдите табличку на опоре моста и укажите номер, указанный на ней.",
+                    "correct_answer": "42",
+                    "hint": "Табличка со стороны реки",
+                    "point_rules": "Не выходить на проезжую часть",
+                }
+            ]
+        },
+    )
 
     @classmethod
     def as_form(
@@ -28,7 +52,26 @@ class QuestCreate(BaseModel):
         difficulty: int = Form(ge=1, le=5),
         duration_minutes: int = Form(gt=0),
         rules_and_warnings: str | None = Form(default=None, max_length=5000),
+        points: str = Form(
+            default=QUEST_POINTS_FORM_EXAMPLE,
+            description="JSON-массив точек квеста",
+            openapi_examples={
+                "quest_points": {
+                    "summary": "Пример массива точек",
+                    "value": QUEST_POINTS_FORM_EXAMPLE,
+                }
+            },
+        ),
     ) -> "QuestCreate":
+        try:
+            raw_points = json.loads(points)
+            parsed_points = TypeAdapter(list[QuestPointCreate]).validate_python(raw_points)
+        except (json.JSONDecodeError, ValidationError) as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid points payload: {exc}",
+            ) from exc
+
         return cls(
             title=title,
             description=description,
@@ -36,7 +79,18 @@ class QuestCreate(BaseModel):
             difficulty=difficulty,
             duration_minutes=duration_minutes,
             rules_and_warnings=rules_and_warnings,
+            points=parsed_points,
         )
+
+
+class QuestPointCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    task: str = Field(min_length=20, max_length=5000)
+    correct_answer: str = Field(min_length=1, max_length=500)
+    hint: str | None = Field(default=None, max_length=1000)
+    point_rules: str | None = Field(default=None, max_length=1000)
 
 
 class QuestCreatorResponse(BaseModel):
@@ -105,6 +159,23 @@ class QuestResponse(BaseModel):
     rejection_reason: str | None
     status: QuestStatusSchema
     creator: QuestCreatorResponse
+
+
+class QuestPointResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    latitude: float
+    longitude: float
+    task: str
+    correct_answer: str
+    hint: str | None
+    point_rules: str | None
+
+
+class QuestDetailResponse(QuestResponse):
+    points: list[QuestPointResponse]
 
 
 class QuestRejectRequest(BaseModel):

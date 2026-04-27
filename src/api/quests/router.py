@@ -8,11 +8,13 @@ from src.schemes.quests import (
     QuestComplaintCreateRequest,
     QuestComplaintResponse,
     QuestCreate,
+    QuestDetailResponse,
     QuestListFilters,
     QuestPageResponse,
     QuestResponse,
 )
 from src.services.auth import get_current_user
+from src.services.auth import get_current_user_optional
 from src.services.quests import QuestService
 
 router = APIRouter(tags=["Quests"], prefix="/quests")
@@ -31,9 +33,10 @@ async def create_quest(
 @router.get("", response_model=QuestPageResponse)
 async def get_all_quests(
     filters: QuestListFilters = Depends(QuestListFilters.as_query),
+    current_user: UserResponse | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(create_session),
 ) -> QuestPageResponse:
-    return await QuestService(session).get_all_quests(filters)
+    return await QuestService(session).get_all_quests(filters, current_user)
 
 
 @router.get("/my", response_model=QuestPageResponse)
@@ -45,12 +48,13 @@ async def get_my_quests(
     return await QuestService(session).get_my_quests(current_user, filters)
 
 
-@router.get("/{quest_id}", response_model=QuestResponse)
+@router.get("/{quest_id}", response_model=QuestDetailResponse)
 async def get_quest(
     quest_id: int,
+    current_user: UserResponse | None = Depends(get_current_user_optional),
     session: AsyncSession = Depends(create_session),
-) -> QuestResponse:
-    return await QuestService(session).get_quest(quest_id)
+) -> QuestDetailResponse:
+    return await QuestService(session).get_quest(quest_id, current_user)
 
 
 @router.patch("/{quest_id}/status", response_model=QuestResponse)
