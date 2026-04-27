@@ -43,3 +43,8 @@ class QuestModel(Base):
         back_populates="quest",
         cascade="all, delete-orphan",
     )
+    favorites: Mapped[list["QuestFavoriteModel"]] = relationship(
+        "QuestFavoriteModel",
+        back_populates="quest",
+        cascade="all, delete-orphan",
+    )

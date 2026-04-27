@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from src.models.quests import QuestModel, QuestStatus
 from src.models.quest_complaints import QuestComplaintModel
+from src.models.quest_favorites import QuestFavoriteModel
 from src.models.quest_points import QuestPointModel
 from src.models.users import UserModel, UserRole
 from src.schemes.auth import UserResponse
@@ -230,6 +231,59 @@ class QuestService:
         complaint = await self._get_complaint(complaint_id)
         await self.session.delete(complaint)
         await self.session.commit()
+
+    async def add_to_favorites(self, current_user: UserResponse, quest_id: int) -> None:
+        quest = await self._get_quest(quest_id)
+        if quest.status != QuestStatus.PUBLISHED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only published quests can be added to favorites",
+            )
+
+        existing = await self.session.execute(
+            select(QuestFavoriteModel).where(
+                QuestFavoriteModel.user_id == current_user.id,
+                QuestFavoriteModel.quest_id == quest_id,
+            )
+        )
+        if existing.scalar_one_or_none() is not None:
+            return
+
+        self.session.add(QuestFavoriteModel(user_id=current_user.id, quest_id=quest_id))
+        await self.session.commit()
+
+    async def remove_from_favorites(self, current_user: UserResponse, quest_id: int) -> None:
+        result = await self.session.execute(
+            select(QuestFavoriteModel).where(
+                QuestFavoriteModel.user_id == current_user.id,
+                QuestFavoriteModel.quest_id == quest_id,
+            )
+        )
+        favorite = result.scalar_one_or_none()
+        if favorite is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Quest is not in favorites",
+            )
+        await self.session.delete(favorite)
+        await self.session.commit()
+
+    async def get_favorite_quests(
+        self,
+        current_user: UserResponse,
+        filters: QuestListFilters,
+    ) -> QuestPageResponse:
+        statement = (
+            select(QuestModel)
+            .join(QuestFavoriteModel, QuestFavoriteModel.quest_id == QuestModel.id)
+            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .where(
+                QuestFavoriteModel.user_id == current_user.id,
+                QuestModel.status == QuestStatus.PUBLISHED,
+            )
+            .order_by(QuestFavoriteModel.id.desc())
+        )
+        return await self._get_paginated_quests(statement, filters)
 
     async def _get_paginated_quests(self, statement, filters: QuestListFilters) -> QuestPageResponse:
         statement = self._apply_sql_filters(statement, filters)

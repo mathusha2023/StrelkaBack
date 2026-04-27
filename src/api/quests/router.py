@@ -48,6 +48,15 @@ async def get_my_quests(
     return await QuestService(session).get_my_quests(current_user, filters)
 
 
+@router.get("/favorites", response_model=QuestPageResponse)
+async def get_favorite_quests(
+    filters: QuestListFilters = Depends(QuestListFilters.as_query),
+    current_user: UserResponse = Depends(get_current_user),
+    session: AsyncSession = Depends(create_session),
+) -> QuestPageResponse:
+    return await QuestService(session).get_favorite_quests(current_user, filters)
+
+
 @router.get("/{quest_id}", response_model=QuestDetailResponse)
 async def get_quest(
     quest_id: int,
@@ -88,3 +97,21 @@ async def create_quest_complaint(
     session: AsyncSession = Depends(create_session),
 ) -> QuestComplaintResponse:
     return await QuestService(session).create_complaint(current_user, quest_id, payload)
+
+
+@router.post("/{quest_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
+async def add_quest_to_favorites(
+    quest_id: int,
+    current_user: UserResponse = Depends(get_current_user),
+    session: AsyncSession = Depends(create_session),
+) -> None:
+    await QuestService(session).add_to_favorites(current_user, quest_id)
+
+
+@router.delete("/{quest_id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_quest_from_favorites(
+    quest_id: int,
+    current_user: UserResponse = Depends(get_current_user),
+    session: AsyncSession = Depends(create_session),
+) -> None:
+    await QuestService(session).remove_from_favorites(current_user, quest_id)
