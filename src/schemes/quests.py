@@ -217,9 +217,16 @@ class QuestResponse(BaseModel):
     longitude: float
     creator: QuestCreatorResponse
     is_favourite: bool = False
+    is_completed: bool = False
 
     @classmethod
-    def from_quest_model(cls, quest: "QuestModel", *, is_favourite: bool = False) -> "QuestResponse":
+    def from_quest_model(
+        cls,
+        quest: "QuestModel",
+        *,
+        is_favourite: bool = False,
+        is_completed: bool = False,
+    ) -> "QuestResponse":
         from src.models.quests import QuestModel
 
         if not isinstance(quest, QuestModel):
@@ -243,6 +250,7 @@ class QuestResponse(BaseModel):
             longitude=first.longitude,
             creator=QuestCreatorResponse.model_validate(quest.creator),
             is_favourite=is_favourite,
+            is_completed=is_completed,
         )
 
 
@@ -263,7 +271,13 @@ class QuestDetailResponse(QuestResponse):
     points: list[QuestPointResponse]
 
     @classmethod
-    def from_quest_model(cls, quest: "QuestModel", *, is_favourite: bool = False) -> "QuestDetailResponse":
+    def from_quest_model(
+        cls,
+        quest: "QuestModel",
+        *,
+        is_favourite: bool = False,
+        is_completed: bool = False,
+    ) -> "QuestDetailResponse":
         from src.models.quests import QuestModel
 
         if not isinstance(quest, QuestModel):
@@ -271,7 +285,11 @@ class QuestDetailResponse(QuestResponse):
         pts = sorted(quest.points or [], key=lambda p: p.id)
         if not pts:
             raise ValueError("Quest has no checkpoints")
-        base = QuestResponse.from_quest_model(quest, is_favourite=is_favourite)
+        base = QuestResponse.from_quest_model(
+            quest,
+            is_favourite=is_favourite,
+            is_completed=is_completed,
+        )
         return cls(
             **base.model_dump(),
             points=[QuestPointResponse.model_validate(p) for p in pts],

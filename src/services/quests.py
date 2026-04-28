@@ -97,10 +97,16 @@ class QuestService:
                 detail="Quest not found",
             )
         is_favourite = False
+        is_completed = False
         if current_user is not None:
             is_favourite = await self._is_favourite(current_user.id, quest.id)
+            is_completed = await self._is_completed(current_user.id, quest.id)
         try:
-            return QuestDetailResponse.from_quest_model(quest, is_favourite=is_favourite)
+            return QuestDetailResponse.from_quest_model(
+                quest,
+                is_favourite=is_favourite,
+                is_completed=is_completed,
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -350,12 +356,25 @@ class QuestService:
         end = filters.offset + filters.limit
         page_quests = quests[start:end]
         favorite_ids: set[int] = set()
+        completed_ids: set[int] = set()
         if current_user is not None and page_quests:
+            page_quest_ids = [q.id for q in page_quests]
             favorite_ids = await self._favourite_quest_ids(
                 user_id=current_user.id,
-                quest_ids=[q.id for q in page_quests],
+                quest_ids=page_quest_ids,
             )
-        items = [self._quest_to_response(quest, is_favourite=quest.id in favorite_ids) for quest in page_quests]
+            completed_ids = await self._completed_quest_ids(
+                user_id=current_user.id,
+                quest_ids=page_quest_ids,
+            )
+        items = [
+            self._quest_to_response(
+                quest,
+                is_favourite=quest.id in favorite_ids,
+                is_completed=quest.id in completed_ids,
+            )
+            for quest in page_quests
+        ]
         return QuestPageResponse(
             items=items,
             total=total,
@@ -450,9 +469,19 @@ class QuestService:
     def _sorted_points(quest: QuestModel) -> list[QuestPointModel]:
         return sorted(quest.points or [], key=lambda point: point.id)
 
-    def _quest_to_response(self, quest: QuestModel, *, is_favourite: bool = False) -> QuestResponse:
+    def _quest_to_response(
+        self,
+        quest: QuestModel,
+        *,
+        is_favourite: bool = False,
+        is_completed: bool = False,
+    ) -> QuestResponse:
         try:
-            return QuestResponse.from_quest_model(quest, is_favourite=is_favourite)
+            return QuestResponse.from_quest_model(
+                quest,
+                is_favourite=is_favourite,
+                is_completed=is_completed,
+            )
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -468,6 +497,18 @@ class QuestService:
         )
         return result.scalar_one_or_none() is not None
 
+    async def _is_completed(self, user_id: int, quest_id: int) -> bool:
+        result = await self.session.execute(
+            select(QuestRunModel.id)
+            .where(
+                QuestRunModel.user_id == user_id,
+                QuestRunModel.quest_id == quest_id,
+                QuestRunModel.status == QuestRunStatus.COMPLETED,
+            )
+            .limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def _favourite_quest_ids(self, user_id: int, quest_ids: list[int]) -> set[int]:
         if not quest_ids:
             return set()
@@ -475,6 +516,18 @@ class QuestService:
             select(QuestFavoriteModel.quest_id).where(
                 QuestFavoriteModel.user_id == user_id,
                 QuestFavoriteModel.quest_id.in_(quest_ids),
+            )
+        )
+        return set(result.scalars().all())
+
+    async def _completed_quest_ids(self, user_id: int, quest_ids: list[int]) -> set[int]:
+        if not quest_ids:
+            return set()
+        result = await self.session.execute(
+            select(QuestRunModel.quest_id).where(
+                QuestRunModel.user_id == user_id,
+                QuestRunModel.quest_id.in_(quest_ids),
+                QuestRunModel.status == QuestRunStatus.COMPLETED,
             )
         )
         return set(result.scalars().all())

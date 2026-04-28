@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi import HTTPException, UploadFile, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -68,6 +69,7 @@ class AchievementService:
         user_id: int,
         filters: AchievementFilters,
     ) -> UserAchievementPageResponse:
+        await self._deduplicate_user_achievements(user_id)
         await self.award_eligible_achievements(user_id)
         total_result = await self.session.execute(
             select(func.count(UserAchievementModel.id)).where(UserAchievementModel.user_id == user_id)
@@ -108,6 +110,7 @@ class AchievementService:
 
     async def award_eligible_achievements(self, user_id: int) -> None:
         await self._ensure_default_achievements()
+        await self._deduplicate_user_achievements(user_id)
         user = await self._get_user(user_id)
         achievements_result = await self.session.execute(select(AchievementModel))
         achievements = achievements_result.scalars().all()
@@ -126,20 +129,19 @@ class AchievementService:
                 continue
             if not self._matches_achievement(user, achievement, user_place, team_place):
                 continue
-            self.session.add(
-                UserAchievementModel(
-                    user_id=user.id,
-                    achievement_id=achievement.id,
-                    awarded_at=now,
-                )
-            )
+            self._add_user_achievement(user.id, achievement.id, now)
+            awarded_ids.add(achievement.id)
             changed = True
 
         if changed:
-            await self.session.commit()
+            try:
+                await self.session.commit()
+            except IntegrityError:
+                await self.session.rollback()
 
     async def award_achievement_by_criteria(self, user_id: int, criteria: AchievementCriteria) -> None:
         await self._ensure_default_achievements()
+        await self._deduplicate_user_achievements(user_id)
         user = await self._get_user(user_id)
         result = await self.session.execute(
             select(AchievementModel).where(
@@ -160,14 +162,50 @@ class AchievementService:
         if awarded_result.scalar_one_or_none() is not None:
             return
 
-        self.session.add(
-            UserAchievementModel(
-                user_id=user.id,
-                achievement_id=achievement.id,
-                awarded_at=datetime.now(timezone.utc),
+        self._add_user_achievement(user.id, achievement.id, datetime.now(timezone.utc))
+        try:
+            await self.session.commit()
+        except IntegrityError:
+            await self.session.rollback()
+
+    async def _deduplicate_user_achievements(self, user_id: int) -> None:
+        result = await self.session.execute(
+            select(UserAchievementModel)
+            .where(UserAchievementModel.user_id == user_id)
+            .order_by(
+                UserAchievementModel.achievement_id,
+                UserAchievementModel.awarded_at.asc(),
+                UserAchievementModel.id.asc(),
             )
         )
+        seen_achievement_ids: set[int] = set()
+        duplicates: list[UserAchievementModel] = []
+        for user_achievement in result.scalars().all():
+            if user_achievement.achievement_id in seen_achievement_ids:
+                duplicates.append(user_achievement)
+                continue
+            seen_achievement_ids.add(user_achievement.achievement_id)
+
+        if not duplicates:
+            return
+
+        for duplicate in duplicates:
+            await self.session.delete(duplicate)
         await self.session.commit()
+
+    def _add_user_achievement(
+        self,
+        user_id: int,
+        achievement_id: int,
+        awarded_at: datetime,
+    ) -> None:
+        self.session.add(
+            UserAchievementModel(
+                user_id=user_id,
+                achievement_id=achievement_id,
+                awarded_at=awarded_at,
+            )
+        )
 
     async def _ensure_default_achievements(self) -> None:
         changed = False
@@ -178,12 +216,21 @@ class AchievementService:
             else:
                 statement = statement.where(AchievementModel.points_required == payload["points_required"])
 
-            result = await self.session.execute(statement)
-            achievement = result.scalar_one_or_none()
-            if achievement is None:
+            result = await self.session.execute(statement.order_by(AchievementModel.id.asc()))
+            achievements = result.scalars().all()
+            if not achievements:
                 self.session.add(AchievementModel(image_file_id=None, **payload))
                 changed = True
                 continue
+
+            achievement = achievements[0]
+            for duplicate in achievements[1:]:
+                await self._move_user_achievements_to_canonical(
+                    canonical_achievement_id=achievement.id,
+                    duplicate_achievement_id=duplicate.id,
+                )
+                await self.session.delete(duplicate)
+                changed = True
 
             if achievement.title != payload["title"] or achievement.description != payload["description"]:
                 achievement.title = payload["title"]
@@ -191,6 +238,34 @@ class AchievementService:
                 changed = True
         if changed:
             await self.session.commit()
+
+    async def _move_user_achievements_to_canonical(
+        self,
+        canonical_achievement_id: int,
+        duplicate_achievement_id: int,
+    ) -> None:
+        duplicate_result = await self.session.execute(
+            select(UserAchievementModel)
+            .where(UserAchievementModel.achievement_id == duplicate_achievement_id)
+            .order_by(UserAchievementModel.awarded_at.asc(), UserAchievementModel.id.asc())
+        )
+        for duplicate_user_achievement in duplicate_result.scalars().all():
+            canonical_result = await self.session.execute(
+                select(UserAchievementModel)
+                .where(
+                    UserAchievementModel.user_id == duplicate_user_achievement.user_id,
+                    UserAchievementModel.achievement_id == canonical_achievement_id,
+                )
+                .order_by(UserAchievementModel.awarded_at.asc(), UserAchievementModel.id.asc())
+            )
+            canonical_user_achievement = canonical_result.scalars().first()
+            if canonical_user_achievement is None:
+                duplicate_user_achievement.achievement_id = canonical_achievement_id
+                continue
+
+            if duplicate_user_achievement.awarded_at < canonical_user_achievement.awarded_at:
+                canonical_user_achievement.awarded_at = duplicate_user_achievement.awarded_at
+            await self.session.delete(duplicate_user_achievement)
 
     async def _get_achievement(self, achievement_id: int) -> AchievementModel:
         await self._ensure_default_achievements()
