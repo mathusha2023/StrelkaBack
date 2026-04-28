@@ -1,5 +1,6 @@
 import asyncio
 import re
+import unicodedata
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
@@ -31,6 +32,7 @@ from src.services.minio import MinioService
 from src.services.quest_pdf_export import QuestPdfExportService
 
 NEAR_RADIUS_METERS = 1000
+ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200d\ufeff]")
 
 
 class QuestService:
@@ -621,26 +623,101 @@ class QuestService:
         if not normalized_city:
             return True
 
-        if normalized_city in normalized_location:
+        candidates = cls._city_match_candidates(normalized_location, normalized_city)
+        if normalized_city in candidates:
             return True
 
-        location_parts = [part for part in re.split(r"\s+", normalized_location) if part]
-        city_parts = [part for part in re.split(r"\s+", normalized_city) if part]
-
-        candidates = [normalized_location, *location_parts]
-        if city_parts:
-            candidates.extend(city_parts)
-
-        best_ratio = max(
-            SequenceMatcher(None, normalized_city, candidate).ratio()
+        return any(
+            cls._is_close_city_match(candidate, normalized_city)
             for candidate in candidates
-            if candidate
         )
-        return best_ratio >= 0.72
+
+    @classmethod
+    def _city_match_candidates(cls, normalized_location: str, normalized_city: str) -> set[str]:
+        location_words = normalized_location.split()
+        city_words_count = len(normalized_city.split())
+        candidates = set(location_words)
+
+        if city_words_count > 1:
+            for window_size in range(
+                max(1, city_words_count - 1),
+                min(len(location_words), city_words_count + 1) + 1,
+            ):
+                candidates.update(cls._word_windows(location_words, window_size))
+
+        return {candidate for candidate in candidates if candidate}
+
+    @staticmethod
+    def _word_windows(words: list[str], size: int) -> list[str]:
+        return [
+            " ".join(words[start : start + size])
+            for start in range(0, len(words) - size + 1)
+        ]
+
+    @classmethod
+    def _is_close_city_match(cls, candidate: str, normalized_city: str) -> bool:
+        candidate_compact = candidate.replace(" ", "")
+        city_compact = normalized_city.replace(" ", "")
+        if not candidate_compact or not city_compact:
+            return False
+
+        city_length = len(city_compact)
+        if abs(len(candidate_compact) - city_length) > cls._allowed_city_typos(city_length):
+            return False
+
+        if city_length <= 4 and candidate_compact[0] != city_compact[0]:
+            return False
+
+        ratio = SequenceMatcher(None, normalized_city, candidate).ratio()
+        if ratio < cls._min_city_similarity(city_length):
+            return False
+
+        return cls._levenshtein_distance(candidate_compact, city_compact) <= cls._allowed_city_typos(city_length)
+
+    @staticmethod
+    def _allowed_city_typos(length: int) -> int:
+        if length <= 4:
+            return 1
+        if length <= 8:
+            return 1
+        if length <= 14:
+            return 2
+        return 3
+
+    @staticmethod
+    def _min_city_similarity(length: int) -> float:
+        if length <= 4:
+            return 0.75
+        if length <= 8:
+            return 0.8
+        if length <= 14:
+            return 0.82
+        return 0.84
+
+    @staticmethod
+    def _levenshtein_distance(left: str, right: str) -> int:
+        if left == right:
+            return 0
+        if len(left) < len(right):
+            left, right = right, left
+
+        previous_row = list(range(len(right) + 1))
+        for left_index, left_char in enumerate(left, start=1):
+            current_row = [left_index]
+            for right_index, right_char in enumerate(right, start=1):
+                insertion = current_row[right_index - 1] + 1
+                deletion = previous_row[right_index] + 1
+                substitution = previous_row[right_index - 1] + (left_char != right_char)
+                current_row.append(min(insertion, deletion, substitution))
+            previous_row = current_row
+
+        return previous_row[-1]
 
     @staticmethod
     def _normalize_text(value: str) -> str:
-        value = value.lower().replace("ё", "е")
+        value = unicodedata.normalize("NFKC", value)
+        value = ZERO_WIDTH_RE.sub("", value)
+        value = value.casefold().replace("ё", "е")
         value = re.sub(r"[^a-zа-я0-9\s]", " ", value)
         value = re.sub(r"\s+", " ", value).strip()
         return value
