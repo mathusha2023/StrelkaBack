@@ -312,12 +312,14 @@ class TeamQuestRunService:
 
     async def _has_completed_quest_before(self, run: TeamQuestRunModel) -> bool:
         result = await self.session.execute(
-            select(TeamQuestRunModel.id).where(
+            select(TeamQuestRunModel.id)
+            .where(
                 TeamQuestRunModel.team_id == run.team_id,
                 TeamQuestRunModel.quest_id == run.quest_id,
                 TeamQuestRunModel.status == TeamQuestRunStatus.COMPLETED,
                 TeamQuestRunModel.id != run.id,
             )
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None
 

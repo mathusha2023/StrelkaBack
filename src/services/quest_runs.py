@@ -293,12 +293,14 @@ class QuestRunService:
 
     async def _has_non_rewardable_run_before(self, user_id: int, quest_id: int, current_run_id: int) -> bool:
         result = await self.session.execute(
-            select(QuestRunModel.id).where(
+            select(QuestRunModel.id)
+            .where(
                 QuestRunModel.user_id == user_id,
                 QuestRunModel.quest_id == quest_id,
                 QuestRunModel.status.in_((QuestRunStatus.COMPLETED, QuestRunStatus.ABANDONED)),
                 QuestRunModel.id != current_run_id,
             )
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None
 
