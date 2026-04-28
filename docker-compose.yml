@@ -9,12 +9,12 @@ services:
     command: >
       -c 'mkdir -p /data/bucket
       && minio server /data'
-    ports:
-      - "${S3_PORT}:${S3_PORT}"
-      - "${S3_ADMIN_PORT}:${S3_ADMIN_PORT}"
-    expose:
-      - ${S3_PORT}
-      - ${S3_ADMIN_PORT}
+#    ports:
+#      - "${S3_PORT}:${S3_PORT}"
+#      - "${S3_ADMIN_PORT}:${S3_ADMIN_PORT}"
+#    expose:
+#      - ${S3_PORT}
+#      - ${S3_ADMIN_PORT}
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
@@ -41,11 +41,11 @@ services:
       POSTGRES_PORT: ${POSTGRES_PORT}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DATABASE}
-    ports:
-      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
-    command:
-      - -p
-      - "${POSTGRES_PORT}"
+#    ports:
+#      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+#    command:
+#      - -p
+#      - "${POSTGRES_PORT}"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/01-init-postgis.sql:ro
@@ -65,8 +65,8 @@ services:
       sh -c "redis-server --appendonly yes
       --save 60 1
       --requirepass ${REDIS_PASSWORD}"
-    ports:
-      - "${REDIS_PORT}:${REDIS_PORT}"
+#    ports:
+#      - "${REDIS_PORT}:${REDIS_PORT}"
     volumes:
       - redis_data:/data
     networks:
