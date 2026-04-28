@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 
 from src.models.achievements import AchievementCriteria
 from src.models.quest_points import QuestPointModel
+from src.models.quest_runs import QuestRunModel, QuestRunStatus
 from src.models.quests import QuestModel, QuestStatus
 from src.models.team_quest_runs import (
     TeamQuestRunCheckpointModel,
@@ -191,27 +192,46 @@ class TeamQuestRunService:
         total_checkpoints = len(run.quest.points or [])
         completed_count = len(self._completed_checkpoint_by_point_id(run)) + 1
         points = None
+        points_earned = None
         elapsed = None
+        rewardable_member_ids: set[int] = set()
         if completed_count >= total_checkpoints:
             elapsed = (completed_at - (run.started_at or completed_at)).total_seconds()
+            completed_user_ids = await self._completed_user_ids_for_quest(
+                user_ids=[member.id for member in team.members],
+                quest_id=run.quest_id,
+            )
             if self._team_has_quest_creator(team, run.quest) or await self._has_completed_quest_before(run):
                 points = 0
             else:
+                rewardable_member_ids = {
+                    member.id
+                    for member in team.members
+                    if member.id not in completed_user_ids
+                }
                 points = calculate_team_quest_completion_points(
                     difficulty=run.quest.difficulty,
                     elapsed_seconds=elapsed,
-                )
+                ) if rewardable_member_ids else 0
             run.status = TeamQuestRunStatus.COMPLETED
             run.completed_at = completed_at
             run.points_awarded = points
             if points > 0:
-                await self._award_points_to_team_members(team, points)
+                await self._award_points_to_team_members(team, points, rewardable_member_ids)
+            await self._mark_team_members_quest_completed(
+                team=team,
+                run=run,
+                completed_at=completed_at,
+                points=points,
+                rewardable_member_ids=rewardable_member_ids,
+            )
+            points_earned = points if db_user.id in rewardable_member_ids else 0
 
         await self.session.commit()
         if points is not None and points > 0:
             achievement_service = AchievementService(self.session)
-            for member in team.members:
-                await achievement_service.award_eligible_achievements(member.id)
+            for member_id in rewardable_member_ids:
+                await achievement_service.award_eligible_achievements(member_id)
         if elapsed is not None and elapsed <= 60:
             achievement_service = AchievementService(self.session)
             for member in team.members:
@@ -223,7 +243,7 @@ class TeamQuestRunService:
         return TeamQuestRunCheckpointAnswerResponse(
             correct=True,
             progress=self._build_progress_response(run, team),
-            points_earned=points,
+            points_earned=points_earned,
         )
 
     async def _mark_participant_ready(self, run: TeamQuestRunModel, user_id: int) -> None:
@@ -276,9 +296,15 @@ class TeamQuestRunService:
             return await self._get_run(run.id)
         return run
 
-    async def _award_points_to_team_members(self, team: TeamModel, points: int) -> None:
+    async def _award_points_to_team_members(
+        self,
+        team: TeamModel,
+        points: int,
+        rewardable_member_ids: set[int],
+    ) -> None:
         for member in team.members:
-            member.total_points += points
+            if member.id in rewardable_member_ids:
+                member.total_points += points
 
     @staticmethod
     def _team_has_quest_creator(team: TeamModel, quest: QuestModel) -> bool:
@@ -294,6 +320,69 @@ class TeamQuestRunService:
             )
         )
         return result.scalar_one_or_none() is not None
+
+    async def _completed_user_ids_for_quest(self, user_ids: list[int], quest_id: int) -> set[int]:
+        if not user_ids:
+            return set()
+        result = await self.session.execute(
+            select(QuestRunModel.user_id).where(
+                QuestRunModel.user_id.in_(user_ids),
+                QuestRunModel.quest_id == quest_id,
+                QuestRunModel.status == QuestRunStatus.COMPLETED,
+            )
+        )
+        return set(result.scalars().all())
+
+    async def _mark_team_members_quest_completed(
+        self,
+        team: TeamModel,
+        run: TeamQuestRunModel,
+        completed_at: datetime,
+        points: int,
+        rewardable_member_ids: set[int],
+    ) -> None:
+        member_ids = [member.id for member in team.members]
+        if not member_ids:
+            return
+
+        result = await self.session.execute(
+            select(QuestRunModel).where(
+                QuestRunModel.user_id.in_(member_ids),
+                QuestRunModel.quest_id == run.quest_id,
+                QuestRunModel.status.in_((QuestRunStatus.IN_PROGRESS, QuestRunStatus.COMPLETED)),
+            )
+        )
+        existing_runs = result.scalars().all()
+        completed_user_ids = {
+            quest_run.user_id
+            for quest_run in existing_runs
+            if quest_run.status == QuestRunStatus.COMPLETED
+        }
+        total_checkpoints = len(run.quest.points or [])
+
+        for quest_run in existing_runs:
+            if quest_run.status != QuestRunStatus.IN_PROGRESS:
+                continue
+            quest_run.status = QuestRunStatus.COMPLETED
+            quest_run.completed_at = completed_at
+            quest_run.current_step_index = total_checkpoints
+            quest_run.points_awarded = points if quest_run.user_id in rewardable_member_ids else 0
+            completed_user_ids.add(quest_run.user_id)
+
+        for user_id in member_ids:
+            if user_id in completed_user_ids:
+                continue
+            self.session.add(
+                QuestRunModel(
+                    user_id=user_id,
+                    quest_id=run.quest_id,
+                    status=QuestRunStatus.COMPLETED,
+                    started_at=run.started_at or completed_at,
+                    completed_at=completed_at,
+                    current_step_index=total_checkpoints,
+                    points_awarded=points if user_id in rewardable_member_ids else 0,
+                )
+            )
 
     async def _get_user(self, user_id: int) -> UserModel:
         result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))

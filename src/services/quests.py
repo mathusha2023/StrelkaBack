@@ -40,10 +40,10 @@ class QuestService:
         self.session = session
 
     async def create_quest(
-        self,
-        current_user: UserResponse,
-        payload: QuestCreate,
-        image: UploadFile | None = None,
+            self,
+            current_user: UserResponse,
+            payload: QuestCreate,
+            image: UploadFile | None = None,
     ) -> QuestResponse:
         image_file_id = None
         if image is not None:
@@ -84,16 +84,17 @@ class QuestService:
         return await self._get_quest_response(quest.id)
 
     async def get_quest(
-        self,
-        quest_id: int,
-        current_user: UserResponse | None = None,
+            self,
+            quest_id: int,
+            current_user: UserResponse | None = None,
     ) -> QuestDetailResponse:
         quest = await self._get_quest_with_points(quest_id)
         is_moderator = (
-            current_user is not None
-            and current_user.role.value == UserRole.MODERATOR.value
+                current_user is not None
+                and current_user.role.value == UserRole.MODERATOR.value
         )
-        if quest.status != QuestStatus.PUBLISHED and not is_moderator:
+        if quest.status != QuestStatus.PUBLISHED and not is_moderator and (
+                current_user is None or current_user.id != quest.creator_id):
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Quest not found",
@@ -128,9 +129,9 @@ class QuestService:
         return pdf_content
 
     async def get_my_quests(
-        self,
-        current_user: UserResponse,
-        filters: QuestListFilters,
+            self,
+            current_user: UserResponse,
+            filters: QuestListFilters,
     ) -> QuestPageResponse:
         return await self._get_paginated_quests(
             select(QuestModel)
@@ -145,9 +146,9 @@ class QuestService:
         )
 
     async def get_all_quests(
-        self,
-        filters: QuestListFilters,
-        current_user: UserResponse | None = None,
+            self,
+            filters: QuestListFilters,
+            current_user: UserResponse | None = None,
     ) -> QuestPageResponse:
         statement = (
             select(QuestModel)
@@ -158,8 +159,8 @@ class QuestService:
             .order_by(QuestModel.id.desc())
         )
         is_moderator = (
-            current_user is not None
-            and current_user.role.value == UserRole.MODERATOR.value
+                current_user is not None
+                and current_user.role.value == UserRole.MODERATOR.value
         )
         if not is_moderator:
             statement = statement.where(QuestModel.status == QuestStatus.PUBLISHED)
@@ -196,10 +197,10 @@ class QuestService:
         )
 
     async def update_my_quest_archive_status(
-        self,
-        current_user: UserResponse,
-        quest_id: int,
-        target_status: QuestArchiveStatusSchema,
+            self,
+            current_user: UserResponse,
+            quest_id: int,
+            target_status: QuestArchiveStatusSchema,
     ) -> QuestResponse:
         quest = await self._get_quest(quest_id)
         self._ensure_creator(current_user, quest)
@@ -238,10 +239,10 @@ class QuestService:
         await self.session.commit()
 
     async def create_complaint(
-        self,
-        current_user: UserResponse,
-        quest_id: int,
-        payload: QuestComplaintCreateRequest,
+            self,
+            current_user: UserResponse,
+            quest_id: int,
+            payload: QuestComplaintCreateRequest,
     ) -> QuestComplaintResponse:
         quest = await self._get_quest(quest_id)
         if quest.status != QuestStatus.PUBLISHED:
@@ -271,7 +272,7 @@ class QuestService:
         total = len(complaints)
         items = [
             QuestComplaintResponse.model_validate(complaint)
-            for complaint in complaints[offset : offset + limit]
+            for complaint in complaints[offset: offset + limit]
         ]
         return QuestComplaintPageResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -317,9 +318,9 @@ class QuestService:
         await self.session.commit()
 
     async def get_favorite_quests(
-        self,
-        current_user: UserResponse,
-        filters: QuestListFilters,
+            self,
+            current_user: UserResponse,
+            filters: QuestListFilters,
     ) -> QuestPageResponse:
         statement = (
             select(QuestModel)
@@ -337,11 +338,11 @@ class QuestService:
         return await self._get_paginated_quests(statement, filters, current_user=current_user)
 
     async def _get_paginated_quests(
-        self,
-        statement,
-        filters: QuestListFilters,
-        *,
-        current_user: UserResponse | None = None,
+            self,
+            statement,
+            filters: QuestListFilters,
+            *,
+            current_user: UserResponse | None = None,
     ) -> QuestPageResponse:
         statement = self._apply_sql_filters(statement, filters)
         result = await self.session.execute(statement)
@@ -472,11 +473,11 @@ class QuestService:
         return sorted(quest.points or [], key=lambda point: point.id)
 
     def _quest_to_response(
-        self,
-        quest: QuestModel,
-        *,
-        is_favourite: bool = False,
-        is_completed: bool = False,
+            self,
+            quest: QuestModel,
+            *,
+            is_favourite: bool = False,
+            is_completed: bool = False,
     ) -> QuestResponse:
         try:
             return QuestResponse.from_quest_model(
@@ -549,11 +550,11 @@ class QuestService:
         return complaint
 
     async def _update_quest_status(
-        self,
-        quest_id: int,
-        expected_status: QuestStatus,
-        new_status: QuestStatus,
-        rejection_reason: str | None = None,
+            self,
+            quest_id: int,
+            expected_status: QuestStatus,
+            new_status: QuestStatus,
+            rejection_reason: str | None = None,
     ) -> QuestResponse:
         quest = await self._get_quest(quest_id)
         if quest.status != expected_status:
@@ -625,8 +626,8 @@ class QuestService:
 
         candidates = cls._city_match_candidates(normalized_location, normalized_city)
         if any(
-            cls._is_partial_city_match(candidate, normalized_city)
-            for candidate in candidates
+                cls._is_partial_city_match(candidate, normalized_city)
+                for candidate in candidates
         ):
             return True
 
@@ -643,8 +644,8 @@ class QuestService:
 
         if city_words_count > 1:
             for window_size in range(
-                max(1, city_words_count - 1),
-                min(len(location_words), city_words_count + 1) + 1,
+                    max(1, city_words_count - 1),
+                    min(len(location_words), city_words_count + 1) + 1,
             ):
                 candidates.update(cls._word_windows(location_words, window_size))
 
@@ -653,7 +654,7 @@ class QuestService:
     @staticmethod
     def _word_windows(words: list[str], size: int) -> list[str]:
         return [
-            " ".join(words[start : start + size])
+            " ".join(words[start: start + size])
             for start in range(0, len(words) - size + 1)
         ]
 
