@@ -27,4 +27,5 @@ class TeamResponse(BaseModel):
     code: str
     creator_id: int
     members_count: int
+    total_points: int
     members: list[TeamMemberResponse]

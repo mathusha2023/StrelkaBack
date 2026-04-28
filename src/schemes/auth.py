@@ -34,6 +34,7 @@ class UserResponse(BaseModel):
     birthdate: date
     role: UserRoleSchema
     team_name: str | None = None
+    total_points: int = 0
 
 
 class TokenPairResponse(BaseModel):

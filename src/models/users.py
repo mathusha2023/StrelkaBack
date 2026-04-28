@@ -1,7 +1,7 @@
 import datetime
 from enum import Enum
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from src.database.base import Base
@@ -23,6 +23,7 @@ class UserModel(Base):
     birthdate: Mapped[datetime.date]
     role: Mapped[UserRole] = mapped_column(default=UserRole.USER)
     team_id: Mapped[int | None] = mapped_column(ForeignKey("teams.id"), nullable=True)
+    total_points: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     team: Mapped["TeamModel | None"] = relationship(
         "TeamModel",
@@ -46,6 +47,11 @@ class UserModel(Base):
     )
     favorite_quests: Mapped[list["QuestFavoriteModel"]] = relationship(
         "QuestFavoriteModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    quest_runs: Mapped[list["QuestRunModel"]] = relationship(
+        "QuestRunModel",
         back_populates="user",
         cascade="all, delete-orphan",
     )

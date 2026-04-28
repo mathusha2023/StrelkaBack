@@ -28,3 +28,7 @@ class TeamModel(Base):
     @property
     def members_count(self) -> int:
         return len(self.members)
+
+    @property
+    def total_points(self) -> int:
+        return sum(m.total_points for m in self.members)
