@@ -59,7 +59,7 @@ async def get_favorite_quests(
     return await QuestService(session).get_favorite_quests(current_user, filters)
 
 
-@router.get("/{quest_id}/export.pdf", response_class=Response)
+@router.get("/{quest_id}/export", response_class=Response)
 async def export_quest_to_pdf(
     quest_id: int,
     current_user: UserResponse = Depends(get_current_user),
