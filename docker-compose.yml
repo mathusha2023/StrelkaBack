@@ -25,6 +25,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - minio_data:/data
     networks:
       - backend
 
@@ -45,6 +47,7 @@ services:
       - -p
       - "${POSTGRES_PORT}"
     volumes:
+      - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/01-init-postgis.sql:ro
     networks:
       - backend
@@ -64,6 +67,8 @@ services:
       --requirepass ${REDIS_PASSWORD}"
     ports:
       - "${REDIS_PORT}:${REDIS_PORT}"
+    volumes:
+      - redis_data:/data
     networks:
       - backend
     healthcheck:
@@ -106,3 +111,7 @@ networks:
   backend:
     driver: bridge
 
+volumes:
+  minio_data:
+  postgres_data:
+  redis_data:
