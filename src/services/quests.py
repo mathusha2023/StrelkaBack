@@ -624,7 +624,10 @@ class QuestService:
             return True
 
         candidates = cls._city_match_candidates(normalized_location, normalized_city)
-        if normalized_city in candidates:
+        if any(
+            cls._is_partial_city_match(candidate, normalized_city)
+            for candidate in candidates
+        ):
             return True
 
         return any(
@@ -653,6 +656,15 @@ class QuestService:
             " ".join(words[start : start + size])
             for start in range(0, len(words) - size + 1)
         ]
+
+    @staticmethod
+    def _is_partial_city_match(candidate: str, normalized_city: str) -> bool:
+        if normalized_city in candidate:
+            return True
+
+        candidate_compact = candidate.replace(" ", "")
+        city_compact = normalized_city.replace(" ", "")
+        return bool(city_compact) and city_compact in candidate_compact
 
     @classmethod
     def _is_close_city_match(cls, candidate: str, normalized_city: str) -> bool:
