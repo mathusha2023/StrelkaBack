@@ -1,4 +1,6 @@
+import asyncio
 import re
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 
 from fastapi import HTTPException, status
@@ -11,6 +13,7 @@ from src.models.quests import QuestModel, QuestStatus
 from src.models.quest_complaints import QuestComplaintModel
 from src.models.quest_favorites import QuestFavoriteModel
 from src.models.quest_points import QuestPointModel
+from src.models.quest_runs import QuestRunModel, QuestRunStatus
 from src.models.users import UserModel, UserRole
 from src.schemes.auth import UserResponse
 from src.schemes.quests import (
@@ -25,6 +28,7 @@ from src.schemes.quests import (
     QuestResponse,
 )
 from src.services.minio import MinioService
+from src.services.quest_pdf_export import QuestPdfExportService
 
 NEAR_RADIUS_METERS = 1000
 
@@ -102,6 +106,18 @@ class QuestService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(exc),
             ) from exc
+
+    async def export_quest_to_pdf(self, current_user: UserResponse, quest_id: int) -> bytes:
+        quest = await self._get_quest_with_points(quest_id)
+        if quest.status != QuestStatus.PUBLISHED:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only published quests can be exported",
+            )
+
+        pdf_content = await asyncio.to_thread(QuestPdfExportService.build_quest_pdf, quest)
+        await self._mark_exported_quest_completed(current_user.id, quest)
+        return pdf_content
 
     async def get_my_quests(
         self,
@@ -384,6 +400,55 @@ class QuestService:
     async def _get_quest_response(self, quest_id: int) -> QuestResponse:
         quest = await self._get_quest(quest_id)
         return self._quest_to_response(quest, is_favourite=False)
+
+    async def _mark_exported_quest_completed(self, user_id: int, quest: QuestModel) -> None:
+        points_count = len(self._sorted_points(quest))
+        now = datetime.now(timezone.utc)
+
+        active_result = await self.session.execute(
+            select(QuestRunModel).where(
+                QuestRunModel.user_id == user_id,
+                QuestRunModel.quest_id == quest.id,
+                QuestRunModel.status == QuestRunStatus.IN_PROGRESS,
+            )
+        )
+        active_run = active_result.scalar_one_or_none()
+        if active_run is not None:
+            active_run.status = QuestRunStatus.COMPLETED
+            active_run.completed_at = now
+            active_run.current_step_index = points_count
+            active_run.points_awarded = 0
+            await self.session.commit()
+            return
+
+        completed_result = await self.session.execute(
+            select(QuestRunModel.id)
+            .where(
+                QuestRunModel.user_id == user_id,
+                QuestRunModel.quest_id == quest.id,
+                QuestRunModel.status == QuestRunStatus.COMPLETED,
+            )
+            .limit(1)
+        )
+        if completed_result.scalar_one_or_none() is not None:
+            return
+
+        self.session.add(
+            QuestRunModel(
+                user_id=user_id,
+                quest_id=quest.id,
+                status=QuestRunStatus.COMPLETED,
+                started_at=now,
+                completed_at=now,
+                current_step_index=points_count,
+                points_awarded=0,
+            )
+        )
+        await self.session.commit()
+
+    @staticmethod
+    def _sorted_points(quest: QuestModel) -> list[QuestPointModel]:
+        return sorted(quest.points or [], key=lambda point: point.id)
 
     def _quest_to_response(self, quest: QuestModel, *, is_favourite: bool = False) -> QuestResponse:
         try:

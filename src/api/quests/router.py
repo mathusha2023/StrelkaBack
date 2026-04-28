@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.database.db_session import create_session
@@ -55,6 +57,26 @@ async def get_favorite_quests(
     session: AsyncSession = Depends(create_session),
 ) -> QuestPageResponse:
     return await QuestService(session).get_favorite_quests(current_user, filters)
+
+
+@router.get("/{quest_id}/export.pdf", response_class=Response)
+async def export_quest_to_pdf(
+    quest_id: int,
+    current_user: UserResponse = Depends(get_current_user),
+    session: AsyncSession = Depends(create_session),
+) -> Response:
+    pdf_content = await QuestService(session).export_quest_to_pdf(current_user, quest_id)
+    filename = f"quest-{quest_id}.pdf"
+    return Response(
+        content=pdf_content,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename=\"{filename}\"; "
+                f"filename*=UTF-8''{quote(filename)}"
+            )
+        },
+    )
 
 
 @router.get("/{quest_id}", response_model=QuestDetailResponse)
