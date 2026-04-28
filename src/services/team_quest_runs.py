@@ -46,7 +46,7 @@ class TeamQuestRunService:
         current_user: UserResponse,
         quest_id: int,
         is_ready: bool,
-    ) -> TeamQuestRunProgressResponse:
+    ) -> TeamQuestRunProgressResponse | None:
         db_user = await self._get_user(current_user.id)
         if db_user.team_id is None:
             raise HTTPException(
@@ -82,6 +82,10 @@ class TeamQuestRunService:
                     detail="Team quest run has already started",
                 )
             await self._mark_participant_not_ready(run, db_user.id)
+            if not run.participants:
+                await self.session.delete(run)
+                await self.session.commit()
+                return None
             self._cancel_scheduled_start(run)
             await self.session.commit()
             run = await self._get_run(run.id)
@@ -96,6 +100,8 @@ class TeamQuestRunService:
                 started_at=None,
                 completed_at=None,
                 points_awarded=None,
+                participants=[],
+                checkpoints=[],
             )
             self.session.add(run)
             await self.session.flush()
@@ -239,7 +245,7 @@ class TeamQuestRunService:
         )
         if participant is None:
             return
-        await self.session.delete(participant)
+        run.participants.remove(participant)
         await self.session.flush()
 
     def _schedule_start_if_team_ready(self, run: TeamQuestRunModel, team: TeamModel) -> None:

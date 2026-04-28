@@ -15,12 +15,12 @@ from src.services.team_quest_runs import TeamQuestRunService
 router = APIRouter(tags=["Team Quest Runs"], prefix="/team-quest-runs")
 
 
-@router.patch("", response_model=TeamQuestRunProgressResponse)
+@router.patch("", response_model=TeamQuestRunProgressResponse | None)
 async def update_team_quest_run_readiness(
     payload: TeamQuestRunReadinessRequest,
     current_user: UserResponse = Depends(get_current_user),
     session: AsyncSession = Depends(create_session),
-) -> TeamQuestRunProgressResponse:
+) -> TeamQuestRunProgressResponse | None:
     return await TeamQuestRunService(session).update_readiness(
         current_user=current_user,
         quest_id=payload.quest_id,
