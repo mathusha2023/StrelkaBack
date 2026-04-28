@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.models.achievements import AchievementCriteria
 from src.models.quest_points import QuestPointModel
 from src.models.quests import QuestModel, QuestStatus
 from src.models.team_quest_runs import (
@@ -24,6 +25,7 @@ from src.schemes.team_quest_runs import (
     TeamQuestRunProgressResponse,
     TeamQuestRunStatusSchema,
 )
+from src.services.achievements import AchievementService
 from src.services.quest_runs import _normalize_answer
 
 TEAM_QUEST_START_DELAY_SECONDS = 5
@@ -54,6 +56,11 @@ class TeamQuestRunService:
 
         quest = await self._get_quest_for_play(quest_id)
         team = await self._get_team(db_user.team_id)
+        if is_ready and len(team.members) < 2:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Team quest run requires at least two team members",
+            )
         run = await self._get_active_run_for_team(team.id)
         if run is not None:
             run = await self._advance_start_if_ready(run)
@@ -178,18 +185,34 @@ class TeamQuestRunService:
         total_checkpoints = len(run.quest.points or [])
         completed_count = len(self._completed_checkpoint_by_point_id(run)) + 1
         points = None
+        elapsed = None
         if completed_count >= total_checkpoints:
             elapsed = (completed_at - (run.started_at or completed_at)).total_seconds()
-            points = calculate_team_quest_completion_points(
-                difficulty=run.quest.difficulty,
-                elapsed_seconds=elapsed,
-            )
+            if self._team_has_quest_creator(team, run.quest) or await self._has_completed_quest_before(run):
+                points = 0
+            else:
+                points = calculate_team_quest_completion_points(
+                    difficulty=run.quest.difficulty,
+                    elapsed_seconds=elapsed,
+                )
             run.status = TeamQuestRunStatus.COMPLETED
             run.completed_at = completed_at
             run.points_awarded = points
-            await self._award_points_to_team_members(team, points)
+            if points > 0:
+                await self._award_points_to_team_members(team, points)
 
         await self.session.commit()
+        if points is not None and points > 0:
+            achievement_service = AchievementService(self.session)
+            for member in team.members:
+                await achievement_service.award_eligible_achievements(member.id)
+        if elapsed is not None and elapsed <= 60:
+            achievement_service = AchievementService(self.session)
+            for member in team.members:
+                await achievement_service.award_achievement_by_criteria(
+                    member.id,
+                    AchievementCriteria.QUEST_UNDER_MINUTE,
+                )
         run = await self._get_run(run.id)
         return TeamQuestRunCheckpointAnswerResponse(
             correct=True,
@@ -250,6 +273,21 @@ class TeamQuestRunService:
     async def _award_points_to_team_members(self, team: TeamModel, points: int) -> None:
         for member in team.members:
             member.total_points += points
+
+    @staticmethod
+    def _team_has_quest_creator(team: TeamModel, quest: QuestModel) -> bool:
+        return any(member.id == quest.creator_id for member in team.members)
+
+    async def _has_completed_quest_before(self, run: TeamQuestRunModel) -> bool:
+        result = await self.session.execute(
+            select(TeamQuestRunModel.id).where(
+                TeamQuestRunModel.team_id == run.team_id,
+                TeamQuestRunModel.quest_id == run.quest_id,
+                TeamQuestRunModel.status == TeamQuestRunStatus.COMPLETED,
+                TeamQuestRunModel.id != run.id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
 
     async def _get_user(self, user_id: int) -> UserModel:
         result = await self.session.execute(select(UserModel).where(UserModel.id == user_id))

@@ -10,3 +10,4 @@ from src.models.team_quest_runs import (
     TeamQuestRunModel,
     TeamQuestRunParticipantModel,
 )
+from src.models.achievements import AchievementModel, UserAchievementModel

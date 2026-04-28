@@ -65,6 +65,11 @@ class UserModel(Base):
         back_populates="completed_by_user",
         cascade="all, delete-orphan",
     )
+    achievements: Mapped[list["UserAchievementModel"]] = relationship(
+        "UserAchievementModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def age(self) -> int:

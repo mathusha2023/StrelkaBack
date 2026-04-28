@@ -1,0 +1,62 @@
+[
+  {
+    "title": "Вершина рейтинга",
+    "description": "Займите первое место в рейтинге игроков.",
+    "criteria": "rating_first_place",
+    "points_required": null
+  },
+  {
+    "title": "Член сильнейшей команды",
+    "description": "Состоите в команде, которая занимает первое место в командном рейтинге.",
+    "criteria": "team_rating_first_place",
+    "points_required": null
+  },
+  {
+    "title": "Скороход",
+    "description": "Пройдите квест за минуту или быстрее.",
+    "criteria": "quest_under_minute",
+    "points_required": null
+  },
+  {
+    "title": "Первые шаги",
+    "description": "Наберите 10 очков.",
+    "criteria": "points",
+    "points_required": 10
+  },
+  {
+    "title": "Первая сотня",
+    "description": "Наберите 100 очков.",
+    "criteria": "points",
+    "points_required": 100
+  },
+  {
+    "title": "Уверенный игрок",
+    "description": "Наберите 250 очков.",
+    "criteria": "points",
+    "points_required": 250
+  },
+  {
+    "title": "Опытный искатель",
+    "description": "Наберите 500 очков.",
+    "criteria": "points",
+    "points_required": 500
+  },
+  {
+    "title": "Мастер квестов",
+    "description": "Наберите 1000 очков.",
+    "criteria": "points",
+    "points_required": 1000
+  },
+  {
+    "title": "Легенда маршрутов",
+    "description": "Наберите 1500 очков.",
+    "criteria": "points",
+    "points_required": 1500
+  },
+  {
+    "title": "Чемпион Стрелки",
+    "description": "Наберите 3000 очков.",
+    "criteria": "points",
+    "points_required": 3000
+  }
+]

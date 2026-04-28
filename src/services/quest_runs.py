@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from src.models.achievements import AchievementCriteria
 from src.models.quest_points import QuestPointModel
 from src.models.quest_runs import QuestRunModel, QuestRunStatus
 from src.models.quests import QuestModel, QuestStatus
@@ -23,6 +24,7 @@ from src.schemes.quest_runs import (
     QuestRunProgressResponse,
     QuestRunStatusSchema,
 )
+from src.services.achievements import AchievementService
 
 
 _ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200d\ufeff]")
@@ -233,6 +235,14 @@ class QuestRunService:
                 user.total_points += points
 
             await self.session.commit()
+            achievement_service = AchievementService(self.session)
+            if points > 0:
+                await achievement_service.award_eligible_achievements(current_user.id)
+            if elapsed <= 60:
+                await achievement_service.award_achievement_by_criteria(
+                    current_user.id,
+                    AchievementCriteria.QUEST_UNDER_MINUTE,
+                )
             await self.session.refresh(run)
             run = await self._get_run_with_quest(run.id, current_user.id)
             progress = self._build_progress_response(run, run.quest)

@@ -4,7 +4,7 @@ from minio.error import S3Error
 
 from src.services.minio import MinioService
 
-router = APIRouter(tags=["Common"])
+router = APIRouter(tags=["Files"])
 
 
 @router.get("/file/{file_id}")
