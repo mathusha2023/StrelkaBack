@@ -133,6 +133,7 @@ class QuestListFilters(BaseModel):
     min_duration_minutes: int | None = Field(default=None, ge=1)
     max_duration_minutes: int | None = Field(default=None, ge=1)
     difficulties: list[int] | None = None
+    search: str | None = Field(default=None, min_length=1, max_length=255)
     city: str | None = Field(default=None, min_length=1, max_length=255)
     near_latitude: float | None = Field(default=None, ge=-90, le=90)
     near_longitude: float | None = Field(default=None, ge=-180, le=180)
@@ -153,6 +154,12 @@ class QuestListFilters(BaseModel):
         min_duration_minutes: int | None = Query(default=None, ge=1),
         max_duration_minutes: int | None = Query(default=None, ge=1),
         difficulties: list[int] | None = Query(default=None),
+        search: str | None = Query(
+            default=None,
+            min_length=1,
+            max_length=255,
+            description="Поиск по названию квеста с нормализацией и неточным совпадением",
+        ),
         city: str | None = Query(default=None, min_length=1, max_length=255),
         near_latitude: float | None = Query(
             default=None,
@@ -194,6 +201,7 @@ class QuestListFilters(BaseModel):
             min_duration_minutes=min_duration_minutes,
             max_duration_minutes=max_duration_minutes,
             difficulties=difficulties,
+            search=search,
             city=city,
             near_latitude=near_latitude,
             near_longitude=near_longitude,

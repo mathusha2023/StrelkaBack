@@ -348,6 +348,12 @@ class QuestService:
         result = await self.session.execute(statement)
         quests = result.scalars().all()
 
+        if filters.search:
+            quests = [
+                quest for quest in quests
+                if self._matches_title_filter(quest.title, filters.search)
+            ]
+
         if filters.city:
             quests = [
                 quest for quest in quests
@@ -619,35 +625,43 @@ class QuestService:
 
     @classmethod
     def _matches_city_filter(cls, location: str, city: str) -> bool:
-        normalized_location = cls._normalize_text(location)
-        normalized_city = cls._normalize_text(city)
-        if not normalized_city:
+        return cls._matches_text_filter(location, city)
+
+    @classmethod
+    def _matches_title_filter(cls, title: str, search: str) -> bool:
+        return cls._matches_text_filter(title, search)
+
+    @classmethod
+    def _matches_text_filter(cls, value: str, query: str) -> bool:
+        normalized_value = cls._normalize_text(value)
+        normalized_query = cls._normalize_text(query)
+        if not normalized_query:
             return True
 
-        candidates = cls._city_match_candidates(normalized_location, normalized_city)
+        candidates = cls._text_match_candidates(normalized_value, normalized_query)
         if any(
-                cls._is_partial_city_match(candidate, normalized_city)
+                cls._is_partial_text_match(candidate, normalized_query)
                 for candidate in candidates
         ):
             return True
 
         return any(
-            cls._is_close_city_match(candidate, normalized_city)
+            cls._is_close_text_match(candidate, normalized_query)
             for candidate in candidates
         )
 
     @classmethod
-    def _city_match_candidates(cls, normalized_location: str, normalized_city: str) -> set[str]:
-        location_words = normalized_location.split()
-        city_words_count = len(normalized_city.split())
-        candidates = set(location_words)
+    def _text_match_candidates(cls, normalized_value: str, normalized_query: str) -> set[str]:
+        value_words = normalized_value.split()
+        query_words_count = len(normalized_query.split())
+        candidates = {normalized_value, *value_words}
 
-        if city_words_count > 1:
+        if query_words_count > 1:
             for window_size in range(
-                    max(1, city_words_count - 1),
-                    min(len(location_words), city_words_count + 1) + 1,
+                    max(1, query_words_count - 1),
+                    min(len(value_words), query_words_count + 1) + 1,
             ):
-                candidates.update(cls._word_windows(location_words, window_size))
+                candidates.update(cls._word_windows(value_words, window_size))
 
         return {candidate for candidate in candidates if candidate}
 
@@ -659,36 +673,36 @@ class QuestService:
         ]
 
     @staticmethod
-    def _is_partial_city_match(candidate: str, normalized_city: str) -> bool:
-        if normalized_city in candidate:
+    def _is_partial_text_match(candidate: str, normalized_query: str) -> bool:
+        if normalized_query in candidate:
             return True
 
         candidate_compact = candidate.replace(" ", "")
-        city_compact = normalized_city.replace(" ", "")
-        return bool(city_compact) and city_compact in candidate_compact
+        query_compact = normalized_query.replace(" ", "")
+        return bool(query_compact) and query_compact in candidate_compact
 
     @classmethod
-    def _is_close_city_match(cls, candidate: str, normalized_city: str) -> bool:
+    def _is_close_text_match(cls, candidate: str, normalized_query: str) -> bool:
         candidate_compact = candidate.replace(" ", "")
-        city_compact = normalized_city.replace(" ", "")
-        if not candidate_compact or not city_compact:
+        query_compact = normalized_query.replace(" ", "")
+        if not candidate_compact or not query_compact:
             return False
 
-        city_length = len(city_compact)
-        if abs(len(candidate_compact) - city_length) > cls._allowed_city_typos(city_length):
+        query_length = len(query_compact)
+        if abs(len(candidate_compact) - query_length) > cls._allowed_text_typos(query_length):
             return False
 
-        if city_length <= 4 and candidate_compact[0] != city_compact[0]:
+        if query_length <= 4 and candidate_compact[0] != query_compact[0]:
             return False
 
-        ratio = SequenceMatcher(None, normalized_city, candidate).ratio()
-        if ratio < cls._min_city_similarity(city_length):
+        ratio = SequenceMatcher(None, normalized_query, candidate).ratio()
+        if ratio < cls._min_text_similarity(query_length):
             return False
 
-        return cls._levenshtein_distance(candidate_compact, city_compact) <= cls._allowed_city_typos(city_length)
+        return cls._levenshtein_distance(candidate_compact, query_compact) <= cls._allowed_text_typos(query_length)
 
     @staticmethod
-    def _allowed_city_typos(length: int) -> int:
+    def _allowed_text_typos(length: int) -> int:
         if length <= 4:
             return 1
         if length <= 8:
@@ -698,7 +712,7 @@ class QuestService:
         return 3
 
     @staticmethod
-    def _min_city_similarity(length: int) -> float:
+    def _min_text_similarity(length: int) -> float:
         if length <= 4:
             return 0.75
         if length <= 8:
