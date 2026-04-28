@@ -55,6 +55,16 @@ class UserModel(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    team_quest_run_participants: Mapped[list["TeamQuestRunParticipantModel"]] = relationship(
+        "TeamQuestRunParticipantModel",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    completed_team_quest_checkpoints: Mapped[list["TeamQuestRunCheckpointModel"]] = relationship(
+        "TeamQuestRunCheckpointModel",
+        back_populates="completed_by_user",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def age(self) -> int:

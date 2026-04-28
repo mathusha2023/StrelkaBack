@@ -9,6 +9,7 @@ from src.schemes.auth import (
     TokenPairResponse,
     UserCreate,
     UserResponse,
+    UserUpdate,
 )
 from src.models.users import UserRole
 from src.services.auth import AuthService, get_current_user, get_redis
@@ -74,3 +75,13 @@ async def logout_user(
 @router.get("/me", response_model=UserResponse, summary="Get current user")
 async def get_me(current_user: UserResponse = Depends(get_current_user)) -> UserResponse:
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse, summary="Update current user")
+async def update_me(
+    payload: UserUpdate,
+    current_user: UserResponse = Depends(get_current_user),
+    session: AsyncSession = Depends(create_session),
+    redis: Redis = Depends(get_redis),
+) -> UserResponse:
+    return await AuthService(session, redis).update_me(current_user, payload)

@@ -54,3 +54,8 @@ class QuestModel(Base):
         back_populates="quest",
         cascade="all, delete-orphan",
     )
+    team_runs: Mapped[list["TeamQuestRunModel"]] = relationship(
+        "TeamQuestRunModel",
+        back_populates="quest",
+        cascade="all, delete-orphan",
+    )

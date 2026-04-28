@@ -1,7 +1,7 @@
 from datetime import date
 from enum import Enum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class UserRoleSchema(str, Enum):
@@ -14,6 +14,17 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=255)
     password: str = Field(min_length=8, max_length=255)
     birthdate: date
+
+
+class UserUpdate(BaseModel):
+    username: str | None = Field(default=None, min_length=3, max_length=255)
+    birthdate: date | None = None
+
+    @model_validator(mode="after")
+    def validate_has_changes(self) -> "UserUpdate":
+        if self.username is None and self.birthdate is None:
+            raise ValueError("At least one field must be provided")
+        return self
 
 
 class LoginRequest(BaseModel):

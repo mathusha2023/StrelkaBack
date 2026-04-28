@@ -24,6 +24,7 @@ from src.schemes.auth import (
     TokenPairResponse,
     UserCreate,
     UserResponse,
+    UserUpdate,
 )
 
 http_bearer = HTTPBearer(auto_error=False)
@@ -120,6 +121,26 @@ class AuthService:
             )
 
         await self.redis.delete(self._refresh_key(user_id))
+
+    async def update_me(self, current_user: UserResponse, payload: UserUpdate) -> UserResponse:
+        result = await self.session.execute(
+            select(UserModel).options(selectinload(UserModel.team)).where(UserModel.id == current_user.id)
+        )
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+            )
+
+        if payload.username is not None:
+            user.username = payload.username
+        if payload.birthdate is not None:
+            user.birthdate = payload.birthdate
+
+        await self.session.commit()
+        await self.session.refresh(user)
+        return UserResponse.model_validate(user)
 
     async def _get_user_by_email(self, email: str) -> UserModel | None:
         query = select(UserModel).options(selectinload(UserModel.team)).where(UserModel.email == email)

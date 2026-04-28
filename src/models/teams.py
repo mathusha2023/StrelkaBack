@@ -24,6 +24,11 @@ class TeamModel(Base):
         back_populates="team",
         foreign_keys="UserModel.team_id",
     )
+    team_quest_runs: Mapped[list["TeamQuestRunModel"]] = relationship(
+        "TeamQuestRunModel",
+        back_populates="team",
+        cascade="all, delete-orphan",
+    )
 
     @property
     def members_count(self) -> int:
