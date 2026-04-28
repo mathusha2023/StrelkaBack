@@ -92,8 +92,11 @@ class QuestService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Quest not found",
             )
+        is_favourite = False
+        if current_user is not None:
+            is_favourite = await self._is_favourite(current_user.id, quest.id)
         try:
-            return QuestDetailResponse.from_quest_model(quest)
+            return QuestDetailResponse.from_quest_model(quest, is_favourite=is_favourite)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -114,6 +117,7 @@ class QuestService:
             .where(QuestModel.creator_id == current_user.id)
             .order_by(QuestModel.id.desc()),
             filters,
+            current_user=current_user,
         )
 
     async def get_all_quests(
@@ -138,7 +142,7 @@ class QuestService:
 
         statement = self._apply_near_radius_filter(statement, filters)
 
-        return await self._get_paginated_quests(statement, filters)
+        return await self._get_paginated_quests(statement, filters, current_user=current_user)
 
     async def get_quests_on_moderation(self, filters: QuestListFilters) -> QuestPageResponse:
         return await self._get_paginated_quests(
@@ -306,9 +310,15 @@ class QuestService:
             )
             .order_by(QuestFavoriteModel.id.desc())
         )
-        return await self._get_paginated_quests(statement, filters)
+        return await self._get_paginated_quests(statement, filters, current_user=current_user)
 
-    async def _get_paginated_quests(self, statement, filters: QuestListFilters) -> QuestPageResponse:
+    async def _get_paginated_quests(
+        self,
+        statement,
+        filters: QuestListFilters,
+        *,
+        current_user: UserResponse | None = None,
+    ) -> QuestPageResponse:
         statement = self._apply_sql_filters(statement, filters)
         result = await self.session.execute(statement)
         quests = result.scalars().all()
@@ -322,7 +332,14 @@ class QuestService:
         total = len(quests)
         start = filters.offset
         end = filters.offset + filters.limit
-        items = [self._quest_to_response(quest) for quest in quests[start:end]]
+        page_quests = quests[start:end]
+        favorite_ids: set[int] = set()
+        if current_user is not None and page_quests:
+            favorite_ids = await self._favourite_quest_ids(
+                user_id=current_user.id,
+                quest_ids=[q.id for q in page_quests],
+            )
+        items = [self._quest_to_response(quest, is_favourite=quest.id in favorite_ids) for quest in page_quests]
         return QuestPageResponse(
             items=items,
             total=total,
@@ -366,16 +383,36 @@ class QuestService:
 
     async def _get_quest_response(self, quest_id: int) -> QuestResponse:
         quest = await self._get_quest(quest_id)
-        return self._quest_to_response(quest)
+        return self._quest_to_response(quest, is_favourite=False)
 
-    def _quest_to_response(self, quest: QuestModel) -> QuestResponse:
+    def _quest_to_response(self, quest: QuestModel, *, is_favourite: bool = False) -> QuestResponse:
         try:
-            return QuestResponse.from_quest_model(quest)
+            return QuestResponse.from_quest_model(quest, is_favourite=is_favourite)
         except ValueError as exc:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=str(exc),
             ) from exc
+
+    async def _is_favourite(self, user_id: int, quest_id: int) -> bool:
+        result = await self.session.execute(
+            select(QuestFavoriteModel.id).where(
+                QuestFavoriteModel.user_id == user_id,
+                QuestFavoriteModel.quest_id == quest_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def _favourite_quest_ids(self, user_id: int, quest_ids: list[int]) -> set[int]:
+        if not quest_ids:
+            return set()
+        result = await self.session.execute(
+            select(QuestFavoriteModel.quest_id).where(
+                QuestFavoriteModel.user_id == user_id,
+                QuestFavoriteModel.quest_id.in_(quest_ids),
+            )
+        )
+        return set(result.scalars().all())
 
     async def _get_complaint(self, complaint_id: int) -> QuestComplaintModel:
         result = await self.session.execute(

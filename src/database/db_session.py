@@ -2,7 +2,7 @@ import logging
 from typing import Optional, AsyncGenerator
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from src.database.base import Base
-import src.models  # для создания всех таблиц
+import src.models  # ensure all models are imported for table creation
 
 
 class AsyncPostgresClient:

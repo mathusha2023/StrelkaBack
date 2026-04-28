@@ -1,7 +1,7 @@
-"""Запуски квестов: отдельная таблица `quest_runs`.
+"""Quest runs: a separate `quest_runs` table.
 
-Каждая строка — одно прохождение (активное или завершённое). У пользователя
-не более одной строки со статусом `in_progress` (см. частичный уникальный индекс).
+Each row is a single run (active or finished). A user can have at most one row
+with status `in_progress` (see the partial unique index).
 """
 
 import datetime
@@ -21,7 +21,7 @@ class QuestRunStatus(str, Enum):
 
 
 class QuestRunModel(Base):
-    """Одна запись = один забег по квесту (история прохождений и текущий активный)."""
+    """One row per quest run (history + the current active run)."""
 
     __tablename__ = "quest_runs"
     __table_args__ = (

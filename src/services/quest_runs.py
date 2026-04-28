@@ -29,7 +29,7 @@ _ZERO_WIDTH_RE = re.compile(r"[\u200b-\u200d\ufeff]")
 
 
 def _normalize_answer(value: str) -> str:
-    """Та же логика сравнения смысла, что и при поиске по тексту квестов: ё/е, пунктуация, пробелы."""
+    """Same semantic matching logic as quest text search: yo/e, punctuation, whitespace."""
     value = unicodedata.normalize("NFKC", value)
     value = _ZERO_WIDTH_RE.sub("", value)
     value = value.casefold().strip()
@@ -40,7 +40,7 @@ def _normalize_answer(value: str) -> str:
 
 
 def calculate_quest_completion_points(difficulty: int, duration_minutes: int, elapsed_seconds: float) -> int:
-    """Базовые очки + бонус за скорость относительно заявленной длительности квеста."""
+    """Base points plus a speed bonus relative to the declared quest duration."""
     base = difficulty * 80
     expected_sec = max(float(duration_minutes) * 60.0, 60.0)
     elapsed_seconds = max(elapsed_seconds, 1.0)
@@ -54,7 +54,7 @@ def calculate_quest_completion_points(difficulty: int, duration_minutes: int, el
 
 
 class QuestRunService:
-    """У пользователя в каждый момент не более одного активного забега (любой квест)."""
+    """A user can have at most one active run at a time (for any quest)."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -68,7 +68,7 @@ class QuestRunService:
                 return self._build_progress_response(full, full.quest)
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Уже есть активный квест; завершите его перед запуском другого",
+                detail="You already have an active quest; finish it before starting another one",
             )
 
         now = datetime.now(timezone.utc)
@@ -88,19 +88,19 @@ class QuestRunService:
             await self.session.rollback()
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Уже есть активный квест; завершите его перед запуском другого",
+                detail="You already have an active quest; finish it before starting another one",
             ) from None
         await self.session.refresh(run)
         run_loaded = await self._get_run_with_quest(run.id, current_user.id)
         return self._build_progress_response(run_loaded, run_loaded.quest)
 
     async def get_active_run(self, current_user: UserResponse) -> QuestRunProgressResponse:
-        """Единственный активный забег пользователя (если есть)."""
+        """The user's single active run (if any)."""
         run = await self._get_any_in_progress_run(current_user.id)
         if run is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Нет активного прохождения квеста",
+                detail="No active quest run",
             )
         run = await self._get_run_with_quest(run.id, current_user.id)
         return self._build_progress_response(run, run.quest)
@@ -114,7 +114,7 @@ class QuestRunService:
         if active is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Нет активного прохождения квеста",
+                detail="No active quest run",
             )
         return await self.submit_answer(current_user, active.quest_id, active.id, answer)
 
@@ -123,7 +123,7 @@ class QuestRunService:
         if run is None:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Нет активного прохождения квеста",
+                detail="No active quest run",
             )
         run = await self._get_run_with_quest(run.id, current_user.id)
         run.status = QuestRunStatus.ABANDONED
