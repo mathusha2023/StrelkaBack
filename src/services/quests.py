@@ -3,7 +3,7 @@ from difflib import SequenceMatcher
 
 from fastapi import HTTPException, status
 from fastapi import UploadFile
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -25,6 +25,8 @@ from src.schemes.quests import (
     QuestResponse,
 )
 from src.services.minio import MinioService
+
+NEAR_RADIUS_METERS = 1000
 
 
 class QuestService:
@@ -90,7 +92,13 @@ class QuestService:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Quest not found",
             )
-        return QuestDetailResponse.model_validate(quest)
+        try:
+            return QuestDetailResponse.from_quest_model(quest)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(exc),
+            ) from exc
 
     async def get_my_quests(
         self,
@@ -99,7 +107,10 @@ class QuestService:
     ) -> QuestPageResponse:
         return await self._get_paginated_quests(
             select(QuestModel)
-            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .where(QuestModel.creator_id == current_user.id)
             .order_by(QuestModel.id.desc()),
             filters,
@@ -112,7 +123,10 @@ class QuestService:
     ) -> QuestPageResponse:
         statement = (
             select(QuestModel)
-            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .order_by(QuestModel.id.desc())
         )
         is_moderator = (
@@ -122,12 +136,17 @@ class QuestService:
         if not is_moderator:
             statement = statement.where(QuestModel.status == QuestStatus.PUBLISHED)
 
+        statement = self._apply_near_radius_filter(statement, filters)
+
         return await self._get_paginated_quests(statement, filters)
 
     async def get_quests_on_moderation(self, filters: QuestListFilters) -> QuestPageResponse:
         return await self._get_paginated_quests(
             select(QuestModel)
-            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .where(QuestModel.status == QuestStatus.ON_MODERATION)
             .order_by(QuestModel.id.desc()),
             filters,
@@ -176,7 +195,8 @@ class QuestService:
             quest.rejection_reason = None
         await self.session.commit()
         await self.session.refresh(quest)
-        return QuestResponse.model_validate(quest)
+        quest = await self._get_quest(quest_id)
+        return self._quest_to_response(quest)
 
     async def delete_my_quest(self, current_user: UserResponse, quest_id: int) -> None:
         quest = await self._get_quest(quest_id)
@@ -276,7 +296,10 @@ class QuestService:
         statement = (
             select(QuestModel)
             .join(QuestFavoriteModel, QuestFavoriteModel.quest_id == QuestModel.id)
-            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .where(
                 QuestFavoriteModel.user_id == current_user.id,
                 QuestModel.status == QuestStatus.PUBLISHED,
@@ -299,7 +322,7 @@ class QuestService:
         total = len(quests)
         start = filters.offset
         end = filters.offset + filters.limit
-        items = [QuestResponse.model_validate(quest) for quest in quests[start:end]]
+        items = [self._quest_to_response(quest) for quest in quests[start:end]]
         return QuestPageResponse(
             items=items,
             total=total,
@@ -310,7 +333,10 @@ class QuestService:
     async def _get_quest(self, quest_id: int) -> QuestModel:
         result = await self.session.execute(
             select(QuestModel)
-            .options(selectinload(QuestModel.creator).selectinload(UserModel.team))
+            .options(
+                selectinload(QuestModel.creator).selectinload(UserModel.team),
+                selectinload(QuestModel.points),
+            )
             .where(QuestModel.id == quest_id)
         )
         quest = result.scalar_one_or_none()
@@ -340,7 +366,16 @@ class QuestService:
 
     async def _get_quest_response(self, quest_id: int) -> QuestResponse:
         quest = await self._get_quest(quest_id)
-        return QuestResponse.model_validate(quest)
+        return self._quest_to_response(quest)
+
+    def _quest_to_response(self, quest: QuestModel) -> QuestResponse:
+        try:
+            return QuestResponse.from_quest_model(quest)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=str(exc),
+            ) from exc
 
     async def _get_complaint(self, complaint_id: int) -> QuestComplaintModel:
         result = await self.session.execute(
@@ -377,7 +412,8 @@ class QuestService:
         quest.rejection_reason = rejection_reason
         await self.session.commit()
         await self.session.refresh(quest)
-        return QuestResponse.model_validate(quest)
+        quest = await self._get_quest(quest_id)
+        return self._quest_to_response(quest)
 
     @staticmethod
     def _ensure_creator(current_user: UserResponse, quest: QuestModel) -> None:
@@ -386,6 +422,32 @@ class QuestService:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="You do not have access to this quest",
             )
+
+    @staticmethod
+    def _apply_near_radius_filter(statement, filters: QuestListFilters):
+        if filters.near_latitude is None or filters.near_longitude is None:
+            return statement
+        near_clause = text(
+            """
+            EXISTS (
+              SELECT 1 FROM quest_points qp
+              WHERE qp.quest_id = quests.id
+              AND qp.id = (
+                SELECT MIN(qp2.id) FROM quest_points qp2 WHERE qp2.quest_id = quests.id
+              )
+              AND ST_DWithin(
+                ST_SetSRID(ST_MakePoint(qp.longitude, qp.latitude), 4326)::geography,
+                ST_SetSRID(ST_MakePoint(:ref_lon, :ref_lat), 4326)::geography,
+                :radius_m
+              )
+            )
+            """
+        ).bindparams(
+            ref_lon=filters.near_longitude,
+            ref_lat=filters.near_latitude,
+            radius_m=NEAR_RADIUS_METERS,
+        )
+        return statement.where(near_clause)
 
     @staticmethod
     def _apply_sql_filters(statement, filters: QuestListFilters):

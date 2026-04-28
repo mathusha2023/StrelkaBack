@@ -31,7 +31,7 @@ services:
   database:
     hostname: ${POSTGRES_HOST}
     container_name: database
-    image: postgres
+    image: postgis/postgis:16-3.4
     restart: unless-stopped
     environment:
       POSTGRES_INITDB_ARGS: "--locale=C.UTF-8"
@@ -44,6 +44,8 @@ services:
     command:
       - -p
       - "${POSTGRES_PORT}"
+    volumes:
+      - ./docker/postgres/init-postgis.sql:/docker-entrypoint-initdb.d/01-init-postgis.sql:ro
     networks:
       - backend
     healthcheck:
