@@ -226,6 +226,7 @@ class QuestResponse(BaseModel):
     creator: QuestCreatorResponse
     is_favourite: bool = False
     is_completed: bool = False
+    best_completion_seconds: float | None = None
 
     @classmethod
     def from_quest_model(
@@ -234,6 +235,7 @@ class QuestResponse(BaseModel):
         *,
         is_favourite: bool = False,
         is_completed: bool = False,
+        best_completion_seconds: float | None = None,
     ) -> "QuestResponse":
         from src.models.quests import QuestModel
 
@@ -259,6 +261,7 @@ class QuestResponse(BaseModel):
             creator=QuestCreatorResponse.model_validate(quest.creator),
             is_favourite=is_favourite,
             is_completed=is_completed,
+            best_completion_seconds=best_completion_seconds,
         )
 
 
@@ -285,6 +288,7 @@ class QuestDetailResponse(QuestResponse):
         *,
         is_favourite: bool = False,
         is_completed: bool = False,
+        best_completion_seconds: float | None = None,
     ) -> "QuestDetailResponse":
         from src.models.quests import QuestModel
 
@@ -297,6 +301,7 @@ class QuestDetailResponse(QuestResponse):
             quest,
             is_favourite=is_favourite,
             is_completed=is_completed,
+            best_completion_seconds=best_completion_seconds,
         )
         return cls(
             **base.model_dump(),

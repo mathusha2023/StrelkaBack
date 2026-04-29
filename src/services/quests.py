@@ -6,7 +6,7 @@ from difflib import SequenceMatcher
 
 from fastapi import HTTPException, status
 from fastapi import UploadFile
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -104,11 +104,13 @@ class QuestService:
         if current_user is not None:
             is_favourite = await self._is_favourite(current_user.id, quest.id)
             is_completed = await self._is_completed(current_user.id, quest.id)
+        best_map = await self._best_completion_seconds_by_quest_ids([quest.id])
         try:
             return QuestDetailResponse.from_quest_model(
                 quest,
                 is_favourite=is_favourite,
                 is_completed=is_completed,
+                best_completion_seconds=best_map.get(quest.id),
             )
         except ValueError as exc:
             raise HTTPException(
@@ -225,7 +227,11 @@ class QuestService:
         await self.session.commit()
         await self.session.refresh(quest)
         quest = await self._get_quest(quest_id)
-        return self._quest_to_response(quest)
+        best_map = await self._best_completion_seconds_by_quest_ids([quest.id])
+        return self._quest_to_response(
+            quest,
+            best_completion_seconds=best_map.get(quest.id),
+        )
 
     async def delete_my_quest(self, current_user: UserResponse, quest_id: int) -> None:
         quest = await self._get_quest(quest_id)
@@ -366,8 +372,8 @@ class QuestService:
         page_quests = quests[start:end]
         favorite_ids: set[int] = set()
         completed_ids: set[int] = set()
-        if current_user is not None and page_quests:
-            page_quest_ids = [q.id for q in page_quests]
+        page_quest_ids = [q.id for q in page_quests]
+        if current_user is not None and page_quest_ids:
             favorite_ids = await self._favourite_quest_ids(
                 user_id=current_user.id,
                 quest_ids=page_quest_ids,
@@ -376,11 +382,13 @@ class QuestService:
                 user_id=current_user.id,
                 quest_ids=page_quest_ids,
             )
+        best_seconds_map = await self._best_completion_seconds_by_quest_ids(page_quest_ids)
         items = [
             self._quest_to_response(
                 quest,
                 is_favourite=quest.id in favorite_ids,
                 is_completed=quest.id in completed_ids,
+                best_completion_seconds=best_seconds_map.get(quest.id),
             )
             for quest in page_quests
         ]
@@ -427,7 +435,12 @@ class QuestService:
 
     async def _get_quest_response(self, quest_id: int) -> QuestResponse:
         quest = await self._get_quest(quest_id)
-        return self._quest_to_response(quest, is_favourite=False)
+        best_map = await self._best_completion_seconds_by_quest_ids([quest.id])
+        return self._quest_to_response(
+            quest,
+            is_favourite=False,
+            best_completion_seconds=best_map.get(quest.id),
+        )
 
     async def _mark_exported_quest_completed(self, user_id: int, quest: QuestModel) -> None:
         points_count = len(self._sorted_points(quest))
@@ -484,12 +497,14 @@ class QuestService:
             *,
             is_favourite: bool = False,
             is_completed: bool = False,
+            best_completion_seconds: float | None = None,
     ) -> QuestResponse:
         try:
             return QuestResponse.from_quest_model(
                 quest,
                 is_favourite=is_favourite,
                 is_completed=is_completed,
+                best_completion_seconds=best_completion_seconds,
             )
         except ValueError as exc:
             raise HTTPException(
@@ -577,7 +592,32 @@ class QuestService:
         await self.session.commit()
         await self.session.refresh(quest)
         quest = await self._get_quest(quest_id)
-        return self._quest_to_response(quest)
+        best_map = await self._best_completion_seconds_by_quest_ids([quest.id])
+        return self._quest_to_response(
+            quest,
+            best_completion_seconds=best_map.get(quest.id),
+        )
+
+    async def _best_completion_seconds_by_quest_ids(self, quest_ids: list[int]) -> dict[int, float]:
+        if not quest_ids:
+            return {}
+        elapsed_epoch = func.extract("epoch", QuestRunModel.completed_at - QuestRunModel.started_at)
+        result = await self.session.execute(
+            select(QuestRunModel.quest_id, func.min(elapsed_epoch))
+            .where(
+                QuestRunModel.quest_id.in_(quest_ids),
+                QuestRunModel.status == QuestRunStatus.COMPLETED,
+                QuestRunModel.completed_at.is_not(None),
+            )
+            .group_by(QuestRunModel.quest_id),
+        )
+        rows = result.all()
+        out: dict[int, float] = {}
+        for quest_id, seconds in rows:
+            if seconds is None:
+                continue
+            out[quest_id] = float(seconds)
+        return out
 
     @staticmethod
     def _ensure_creator(current_user: UserResponse, quest: QuestModel) -> None:
